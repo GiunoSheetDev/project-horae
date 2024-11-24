@@ -65,6 +65,11 @@ class Animal:
         self.hunger -= 0.2
         self.thirst -= 0.2
 
+        if self.hunger <= 0:
+            self.hunger = 0
+        if self.thirst <= 0:
+            self.thirst = 0
+
 
 
     def setMovementStateAndSpeed(self, newMovementState : str = "temp") -> None:
@@ -85,9 +90,11 @@ class Animal:
                 self.speed = 0.05
                 
             case "wandering":
+                
                 if random.randint(0, 4) < 3: #3 in 5 chances of being idle.
                     self.currentMovementState = "idle"
                     self.speed = 1
+                    
                     
                 else:
                     self.currentMovementState = "walk"
@@ -152,10 +159,6 @@ class Animal:
     def updatePath(self) -> None:
 
         if not self.pathData:
-            return
-
-        if self.currentPosition == self.endPosition:
-            self.pathData = []
             return
 
 

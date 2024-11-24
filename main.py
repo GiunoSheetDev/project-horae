@@ -2,7 +2,7 @@ import pygame
 import random
 import time
 import os
-
+ 
 
 from animal import *
 from inputmanager import InputManager
@@ -59,8 +59,7 @@ class Test:
         stag = Stag(0)
         stag2 = Stag(1)
             
-        animalList.extend([stag, stag2])
-
+        animalList.extend([stag])
         run = True
         input = InputManager()
         inspector = AnimalInspector(None)
