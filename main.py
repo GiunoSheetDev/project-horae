@@ -29,6 +29,7 @@ class Test:
         self.fps = 60
 
         self.selectedAnimal = None
+        self.inspector = AnimalInspector(None)
 
 
     def createBackGroundSurface(self) -> pygame.Surface:
@@ -58,15 +59,17 @@ class Test:
         
         stag = Stag(0)
         stag2 = Stag(1)
+        boar = Boar(2)
+        wolf = Wolf(3)
             
-        animalList.extend([stag])
+        animalList.extend([stag, stag2, boar, wolf])
         run = True
         input = InputManager()
-        inspector = AnimalInspector(None)
+        
         
 
         while run:
-            input.handle_events()
+            input.handleEvents()
             self.mousePos = pygame.mouse.get_pos()
             
             self.clock.tick(self.fps)
@@ -77,26 +80,21 @@ class Test:
             
             #print(stagList[0].currentPosition, stagList[0].endPosition, stagList[0].path, stagList[0])
             
-            if input.is_action_pressed("escape"):
+            if input.isActionPressed("escape"):
                 run = False
 
-            if input.is_mouse_button_pressed("left"):
+            if input.isMouseButtonPressed("left"):
                 for animal in animalList:
                     if animal.isClicked:
                         self.selectedAnimal = animal
-                        inspector = AnimalInspector(self.selectedAnimal)
+                        self.inspector = AnimalInspector(self.selectedAnimal)
             
-            inspector.update(self.screen)
-
-                    
-
+            if input.isMouseButtonPressed("right"):
+                self.inspector.isShowing = False
 
 
-           
-                        
-                        
-                    
-                    
+
+            self.inspector.update(self.screen)
 
             pygame.display.update()
 

@@ -2,6 +2,8 @@ import os
 import pygame
 import random
 
+from overrides import override
+
 class Animal:
     def __init__(self, id : int):
         self.animal : str 
@@ -32,8 +34,13 @@ class Animal:
         self.speed = 0.02
         self.maxHunger = 400
         self.maxThirst = 400
-        self.hunger = self.maxHunger
-        self.thirst = self.maxThirst
+        self.hunger = random.randint(self.maxHunger-100, self.maxHunger)
+        self.thirst = random.randint(self.maxThirst-100, self.maxThirst)
+
+        self.visibilityRadius = 5
+        self.getPixelDimensionOfSpriteBasedOnAnimalType()
+        
+
         
 
 
@@ -53,6 +60,23 @@ class Animal:
                 
         return animationDict
     
+    def getPixelDimensionOfSpriteBasedOnAnimalType(self):
+        if isinstance(self, Stag):
+            self.halfWidthDimension = 15
+            self.halfHeightDimension = 16
+        elif isinstance(self, Boar):
+            self.halfWidthDimension = 15
+            self.halfHeightDimension = 16
+        elif isinstance(self, Wolf):
+            self.halfWidthDimension = 15
+            self.halfHeightDimension = 16
+        elif isinstance(self, Badger):
+            self.halfWidthDimension = 15
+            self.halfHeightDimension = 16
+
+
+
+
     def checkNeeds(self) -> None:
         #checks for thirst and hunger and determines if the state 
         # is looking for food or not
@@ -83,24 +107,6 @@ class Animal:
             return
 
         
-
-        match self.currentState:
-            case "looking-for-resources":
-                self.currentMovementState = "run"
-                self.speed = 0.05
-                
-            case "wandering":
-                
-                if random.randint(0, 4) < 3: #3 in 5 chances of being idle.
-                    self.currentMovementState = "idle"
-                    self.speed = 1
-                    
-                    
-                else:
-                    self.currentMovementState = "walk"
-                    self.speed = 0.02
-
-
     def generatePath(self, optionalEndPosition = (-1, -1)) -> None:
 
         if optionalEndPosition != (-1, -1): #move animal to specific tile
@@ -114,6 +120,11 @@ class Animal:
         if self.currentMovementState == "idle":
             self.endPosition = self.currentPosition
             self.path = "idle"
+            return
+        
+        if self.currentMovementState == "howl":
+            self.endPosition = self.currentPosition
+            self.path = "howl"
             return
 
         if self.pathData != []:
@@ -143,6 +154,9 @@ class Animal:
             self.pathData.extend(["idle"] * len(self.animationDict["idle"][self.currentDirection])*6)  #dunno why but 6 seems to work best)
             return
         
+        if self.path == "howl":
+            self.pathData.extend(["howl"] * len(self.animationDict["howl"][self.currentDirection]) * 10)
+            return
         
 
         if self.path[0] < 0:
@@ -173,6 +187,8 @@ class Animal:
                 newPosition = (self.position[0]+self.speed, self.position[1])
             case "idle":
                 newPosition = (self.position[0], self.position[1])
+            case "howl":
+                newPosition = (self.position[0], self.position[1])
 
         self.position = newPosition
         self.pathData.pop(0)
@@ -183,6 +199,9 @@ class Animal:
             return
 
         if self.pathData[0] == "idle":
+            return
+
+        if self.pathData[0] == "howl":
             return
         
         self.currentDirection = self.pathData[0]
@@ -227,14 +246,25 @@ class Animal:
         self.draw(screen=screen, backgroundStartingX=backgroundStartingX, backgroundStartingY=backgroundStartingY)
         self.isClicked = self.isBeingClicked(mousePos=mousePos)
         
-        
+    
+    def drawCollisionRect(self, screen) -> None:
+        pygame.draw.rect(screen, (255, 0, 0), self.rect, 1)
+
+    def drawVisibilityRect(self, screen) -> None:
+        pygame.draw.rect(screen, (255, 0, 0), pygame.Rect(
+                                                        self.rect.topleft[0] -((int((self.rect.width * self.visibilityRadius)) - self.rect.width)//2), 
+                                                        self.rect.topleft[1] -((int((self.rect.height * self.visibilityRadius)) - self.rect.height)//2), 
+                                                        int(self.rect.width * self.visibilityRadius), 
+                                                        int(self.rect.height * self.visibilityRadius),
+                                                        ),1)
 
         
     def draw(self, screen, backgroundStartingX, backgroundStartingY) -> None:
         #first set the rect coords to the screen coords and not the grid coords then blit
-        self.rect.x , self.rect.y = backgroundStartingX + self.position[0] * 15 * self.scale - self.position[1] * 15 * self.scale, backgroundStartingY -16 * self.scale + self.position[0] * 8 *self.scale + self.position[1]*8 *self.scale
-        screen.blit(self.image, (backgroundStartingX + self.position[0] * 15 * self.scale - self.position[1] * 15 * self.scale, backgroundStartingY -16 * self.scale + self.position[0] * 8 *self.scale + self.position[1]*8 *self.scale))
-        pygame.draw.rect(screen, (255, 0, 0), self.rect, 1)
+        self.rect.x , self.rect.y = backgroundStartingX + self.position[0] * self.halfWidthDimension * self.scale - self.position[1] * self.halfWidthDimension * self.scale, backgroundStartingY -self.halfHeightDimension * self.scale + self.position[0] * self.halfHeightDimension/2 *self.scale + self.position[1]* self.halfHeightDimension/2 *self.scale
+        screen.blit(self.image, (self.rect.x, self.rect.y))
+        self.drawCollisionRect(screen)
+        #self.drawVisibilityRect(screen)
 
 
 
@@ -243,22 +273,81 @@ class Stag(Animal):
         self.animal = "stag"
         self.states = ["idle", "walk", "run"]
         super().__init__(id)
+    
+    @override
+    def setMovementStateAndSpeed(self, newMovementState = "temp"):
+        super().setMovementStateAndSpeed(newMovementState)
+        match self.currentState:
+            case "looking-for-resources":
+                self.currentMovementState = "run"
+                self.speed = 0.05
+                
+            case "wandering":
+                if "walk" in self.states:
+                    if random.randint(0, 4) < 3: #3 in 5 chances of being idle.
+                        self.currentMovementState = "idle"
+                        self.speed = 1
+                        
+                    else:
+                        self.currentMovementState = "walk"
+                        self.speed = 0.02
         
-
 class Badger(Animal):
     def __init__(self, id):
         self.animal = "badger"
-        super.__init__(id)
+        super().__init__(id)
 
 class Boar(Animal):
     def __init__(self, id):
-        self.animal = "board"
-        super.__init__(id)
+        self.animal = "boar"
+        self.states = ["idle", "run"]
+        super().__init__(id)
+
+    @override
+    def setMovementStateAndSpeed(self, newMovementState = "temp"):
+        super().setMovementStateAndSpeed(newMovementState)
+        match self.currentState:
+            case "looking-for-resources":
+                self.currentMovementState = "run"
+                self.speed = 0.05
+            
+            case "wandering":
+                if random.randint(0, 4) < 3:
+                    self.currentMovementState = "idle"
+                    self.speed = 1
+                        
+                else:
+                    self.currentMovementState = "run"
+                    self.speed = 0.02
+
 
 class Wolf(Animal):
     def __init__(self, id):
         self.animal = "wolf"
-        super.__init__(id)
+        self.states = ["idle", "bite", "howl", "run", "death"]
+        super().__init__(id)
+    
+    @override
+    def setMovementStateAndSpeed(self, newMovementState = "temp"):
+        super().setMovementStateAndSpeed(newMovementState)
+        match self.currentState:
+            case "looking-for-resources":
+                self.currentMovementState = "run"
+                self.speed = 0.05
+            
+            case "wandering":
+                if random.randint(0, 4) < 3:
+                    if random.randint(0, 1):
+                        self.currentMovementState = "idle"
+                        self.speed = 1
+                    else:
+                        self.currentMovementState = "howl"
+                        self.speed = 1
+                
+                else:
+                    self.currentMovementState = "run"
+                    self.speed = 0.02
+
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class InputManager:
         self.keys_pressed = set()
         self.mouse_buttons_pressed = set()
 
-    def handle_events(self):
+    def handleEvents(self):
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
                 self.keys_pressed.add(event.key)
@@ -28,27 +28,27 @@ class InputManager:
             elif event.type == pygame.MOUSEBUTTONUP:
                 self.mouse_buttons_pressed.discard(event.button)
 
-    def get_key_state(self, action):
+    def getKeyState(self, action):
         return self.key_map[action] in self.keys_pressed
 
-    def get_mouse_button_state(self, button):
+    def getMouseButtonState(self, button):
         return self.mouse_buttons[button] in self.mouse_buttons_pressed
 
-    def is_action_pressed(self, action):
-        return self.get_key_state(action)
+    def isActionPressed(self, action):
+        return self.getKeyState(action)
 
-    def is_mouse_button_pressed(self, button):
-        return self.get_mouse_button_state(button)
+    def isMouseButtonPressed(self, button):
+        return self.getMouseButtonState(button)
 
 # Usage in your main loop
 input_manager = InputManager()
 
 if __name__ == "__main__":
     while True:
-        input_manager.handle_events()
+        input_manager.handleEvents()
         
-        if input_manager.is_action_pressed('move_left'):
+        if input_manager.isActionPressed('move_left'):
             print("Moving left")
         
-        if input_manager.is_mouse_button_pressed('left_click'):
+        if input_manager.isMouseButtonPressed('left_click'):
             print("Left mouse button clicked")

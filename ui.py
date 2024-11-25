@@ -6,6 +6,7 @@ class AnimalInspector:
         self.animal = animal
         self.display = pygame.Surface((300, 200), pygame.SRCALPHA)
         self.font = pygame.font.SysFont("Arial", 24)
+        self.isShowing = True
         
     def createDisplay(self):
         self.display.fill((0,0,0, 128))
@@ -24,7 +25,7 @@ class AnimalInspector:
             self.createDisplay()
             self.draw(screen=screen)
 
-
     def draw(self, screen):
-        screen.blit(self.display, (self.animal.rect.x, self.animal.rect.y))
+        if self.isShowing:
+            screen.blit(self.display, (self.animal.rect.x, self.animal.rect.y))
     
