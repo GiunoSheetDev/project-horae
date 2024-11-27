@@ -37,6 +37,8 @@ class Animal:
         self.hunger = random.randint(self.maxHunger-100, self.maxHunger)
         self.thirst = random.randint(self.maxThirst-100, self.maxThirst)
 
+        self.needThreshold = 20
+
         self.visibilityRadius = 5
         self.getPixelDimensionOfSpriteBasedOnAnimalType()
         
@@ -80,7 +82,7 @@ class Animal:
     def checkNeeds(self) -> None:
         #checks for thirst and hunger and determines if the state 
         # is looking for food or not
-        if self.hunger < 20 or self.thirst < 20:
+        if self.hunger < self.needThreshold or self.thirst < self.needThreshold:
             self.currentState = "looking-for-resources"
         else:
             self.currentState = "wandering"
