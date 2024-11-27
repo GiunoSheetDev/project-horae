@@ -8,7 +8,7 @@ animal.Animal methods:
     .updateNeeds: 
         updates hunger and thirst
     .setMovementStateAndSpeed: 
-        based on the current state decides wether to idle, walk or run and adjusts speed accordingly
+        based on the current state decides whether to idle, walk or run and adjusts speed accordingly
     .generatePath: 
         based on current movement state generates a random endPoint and creates a tuple (dx, dy) 
     .translatePath
