@@ -51,11 +51,11 @@ class Tile:
         self.possibleTiles = random.choices(self.possibleTiles, weights=weights, k=1) 
         self.entropy = 0
 
-    def constrain(self, neighborPossibilities, direction):
+    def constrain(self, neighbourPossibilities, direction):
         reduced = False
         if self.entropy > 0:
             possibleConnections = set()
-            for tile in neighborPossibilities: 
+            for tile in neighbourPossibilities: 
                 for png in tilesRules[tile][direction]:
                     possibleConnections.add(png)
             possibleConnections = list(possibleConnections)
@@ -73,13 +73,16 @@ class Tile:
 
         return reduced
         
-        
+
 
 
 
 class World:
     def __init__(self):
+        self.worldSurface = pygame.Surface((SCREEN_W, SCREEN_H))
+        
         self.grid = [[Tile(x, y) for x in range(MAP_ROW_LEN)] for y in range(MAP_ROW_LEN)]
+
         for y in range(MAP_ROW_LEN):
             for x in range(MAP_ROW_LEN):
                 tile = self.grid[y][x]
@@ -151,6 +154,28 @@ class World:
 
         return 1
 
+    def generateSurface(self):
+        done = False
+        while done == False:
+            print("DONE")
+            result = self.waveFunctionCollapse()
+            if result == 0:
+                done = True
+                print("CAIO")
+                
+
+
+        for y in range(MAP_ROW_LEN):
+            for x in range(MAP_ROW_LEN):
+                type = self.getType(x, y)
+                img = pygame.image.load(type).convert_alpha()
+                self.worldSurface.blit(img, (BACKGROUND_STARTING_X + x * 15 * SCALE -y *15 * SCALE, BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE))
+
+
+
+
+    def draw(self, screen):
+        screen.blit(self.worldSurface, (0,0))
 
 
 
@@ -165,11 +190,7 @@ if __name__ == "__main__":
     print(t.possibleTiles, t.entropy)
     w = World()
 
-    done = False
-    while done == False:
-        result = w.waveFunctionCollapse()
-        if result == 0:
-            done = True
+    
     
     test = {}
     for y in range(MAP_ROW_LEN):

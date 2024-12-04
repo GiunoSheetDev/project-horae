@@ -7,7 +7,7 @@ import os
 from animal import *
 from inputmanager import InputManager
 from ui import AnimalInspector
-
+from world import World
 
 from config import *
 
@@ -70,15 +70,16 @@ class Test:
         animalList.extend([stag, stag2, boar, wolf])
         run = True
         input = InputManager()
-        
+        world = World()
+        world.generateSurface()
 
         while run:
             input.handleEvents()
             self.mousePos = pygame.mouse.get_pos()
             
             self.clock.tick(self.fps)
-
-            self.screen.blit(self.backGroundSurface, (0,0))
+            world.draw(self.screen)
+            #self.screen.blit(self.backGroundSurface, (0,0))
 
 
             for animal in animalList:
