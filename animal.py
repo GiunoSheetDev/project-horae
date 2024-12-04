@@ -41,6 +41,12 @@ class Animal:
 
         self.visibilityRadius = 5
         self.getPixelDimensionOfSpriteBasedOnAnimalType()
+
+
+        self.memory = { #each animal remembers the closest resource of each type
+            "water" : (-1, -1),
+            "food"  : (-1, -1),
+        }
         
 
         

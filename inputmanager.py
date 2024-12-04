@@ -6,6 +6,7 @@ class InputManager:
             #"spawn_animal" : pygame.K_f,
             "escape": pygame.K_ESCAPE,
             "f" : pygame.K_f,
+            "space": pygame.K_SPACE,
         }
         
         self.mouse_buttons = {

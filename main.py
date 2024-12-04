@@ -8,14 +8,19 @@ from animal import *
 from inputmanager import InputManager
 from ui import AnimalInspector
 
+
+from config import *
+
+
+
 pygame.init()
 
 class Test:
     def __init__(self):
-        self.screenw, self.screenh = 800, 800
+        self.screenw, self.screenh = SCREEN_W, SCREEN_H
         self.screen = pygame.display.set_mode((self.screenw, self.screenh), pygame.SCALED) 
         
-        self.mapRowLen = 20
+        self.mapRowLen = MAP_ROW_LEN
         self.mapData = [[random.randint(0, 1) for c in range(self.mapRowLen)] for row in range(self.mapRowLen)]
         
         
@@ -36,14 +41,14 @@ class Test:
         backgroundSurface = pygame.Surface((800, 800))
         for y, row in enumerate(self.mapData):
             for x in range(len(row)):
-                backgroundSurface.blit(self.backgroundAssetsDict["tile_022.png"], (self.backgroundStartingX + x * 15 * self.scale -y *15 * self.scale, self.backgroundStartingY + x * 8 * self.scale +y* 8 *self.scale))
+                backgroundSurface.blit(self.backgroundAssetsDict["dark_grass_dirt.png"], (BACKGROUND_STARTING_X + x * 15 * SCALE -y *15 * SCALE, BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE))
                 pass
         return backgroundSurface
 
     def loadBackgroundAssets(self) -> dict:
         assetsDict = {}
         currentDir = os.path.dirname(os.path.abspath(__file__))
-        assetsDir = os.path.join(currentDir, "assets", "isometric tileset", "separated images")
+        assetsDir = os.path.join(currentDir, "assets", "isometric Environment", "Tiles")
         for image in os.listdir(assetsDir):
             tempImg = pygame.image.load(os.path.join(assetsDir, image)).convert_alpha()
             tempImgW, tempImgH = tempImg.get_width(), tempImg.get_height()
@@ -66,15 +71,16 @@ class Test:
         run = True
         input = InputManager()
         
-        
 
         while run:
             input.handleEvents()
             self.mousePos = pygame.mouse.get_pos()
             
             self.clock.tick(self.fps)
-            self.screen.blit(self.backGroundSurface, (0, 0))
-            #    self.screen.blit(self.grass_img, (150 + x *15 -y *15, 100 + x *8 +y*8 - 8))
+
+            self.screen.blit(self.backGroundSurface, (0,0))
+
+
             for animal in animalList:
                 animal.update(self.screen, backgroundStartingX=self.backgroundStartingX, backgroundStartingY=self.backgroundStartingY, mousePos=self.mousePos)
             
