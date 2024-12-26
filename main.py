@@ -7,11 +7,8 @@ import os
 from animal import *
 from inputmanager import InputManager
 from ui import AnimalInspector
-from world import World
-
-from config import *
-
-
+from worldGeneration.config import *
+from worldGeneration.perlinNoise import *
 
 pygame.init()
 
@@ -27,8 +24,7 @@ class Test:
         self.backgroundStartingX = 350
         self.backgroundStartingY = 200
         self.scale = 1
-        self.backgroundAssetsDict = self.loadBackgroundAssets()
-        self.backGroundSurface = self.createBackGroundSurface()
+        
 
         self.clock = pygame.time.Clock()
         self.fps = 60
@@ -36,26 +32,6 @@ class Test:
         self.selectedAnimal = None
         self.inspector = AnimalInspector(None)
 
-
-    def createBackGroundSurface(self) -> pygame.Surface:
-        backgroundSurface = pygame.Surface((800, 800))
-        for y, row in enumerate(self.mapData):
-            for x in range(len(row)):
-                backgroundSurface.blit(self.backgroundAssetsDict["dark_grass_dirt.png"], (BACKGROUND_STARTING_X + x * 15 * SCALE -y *15 * SCALE, BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE))
-                pass
-        return backgroundSurface
-
-    def loadBackgroundAssets(self) -> dict:
-        assetsDict = {}
-        currentDir = os.path.dirname(os.path.abspath(__file__))
-        assetsDir = os.path.join(currentDir, "assets", "isometric Environment", "Tiles")
-        for image in os.listdir(assetsDir):
-            tempImg = pygame.image.load(os.path.join(assetsDir, image)).convert_alpha()
-            tempImgW, tempImgH = tempImg.get_width(), tempImg.get_height()
-            img = pygame.transform.scale(tempImg, (tempImgW * self.scale, tempImgH * self.scale))
-            assetsDict[image] = img
-
-        return assetsDict
 
 
     def run(self):
@@ -71,15 +47,14 @@ class Test:
         run = True
         input = InputManager()
         world = World()
-        world.generateSurface()
 
         while run:
             input.handleEvents()
             self.mousePos = pygame.mouse.get_pos()
             
             self.clock.tick(self.fps)
+            
             world.draw(self.screen)
-            #self.screen.blit(self.backGroundSurface, (0,0))
 
 
             for animal in animalList:
