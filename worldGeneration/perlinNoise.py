@@ -4,6 +4,7 @@ from config import *
 
 import matplotlib.pyplot as plt
 import pygame
+import random
 
 
 
@@ -31,19 +32,19 @@ class World:
         }
 
         self.tilesList = [key for key in self.waterPatternDicts.keys()]
-        self.tilesList.extend(["plain", "mountain"])
-        print(self.tilesList)
+        self.tilesList.extend(["plain", "mountain", "bush_0", "bush_1", "bush_2", "bush_3", "rock_full"])
         self.imageDict = self.preloadImages()
         self.normalizedMap = self.perlinNoise()
         self.worldMap = self.generateWorld()
+        self.vegetarianFoodMap = [[0 for x in range(len(row))] for y, row in enumerate(self.worldMap)]
         self.worldSurface = self.generateSurface()
-
+        
 
 
     def preloadImages(self) -> dict:
         imageDict = {}
         for key in self.tilesList:
-            imageDict[key] = pygame.image.load(os.path.join(IMGPATH, f"{key}.png")).convert_alpha()
+            imageDict[key] = pygame.transform.scale(pygame.image.load(os.path.join(IMGPATH, f"{key}.png")).convert_alpha(), (32, 32))
 
         return imageDict
 
@@ -147,7 +148,19 @@ class World:
     def generateSurface(self) -> pygame.Surface:
         for y, row in enumerate(self.worldMap):
             for x in range(len(row)):
-                self.worldSurface.blit(self.imageDict[self.worldMap[y][x]], (BACKGROUND_STARTING_X + x * 15 * SCALE -y *15 * SCALE, BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE))
+                
+                self.worldSurface.blit(self.imageDict[self.worldMap[y][x]], (BACKGROUND_STARTING_X + x * 16 * SCALE -y *16 * SCALE, BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE))
+                if self.worldMap[y][x] == "mountain": #draw bush
+                    spawnChance = random.randint(1, 3)
+                    if spawnChance < 2: #1 out of 3
+                        variationType = random.randint(0, 3)
+                        self.worldSurface.blit(self.imageDict[f"bush_{variationType}"], (BACKGROUND_STARTING_X + x * 16 * SCALE -y *16 * SCALE,  BACKGROUND_STARTING_Y + x * 8 * SCALE +y* 8 * SCALE-16))
+                        self.vegetarianFoodMap[y][x] = 1
+
+                if "water" in self.worldMap[y][x]: 
+                    self.vegetarianFoodMap[y][x] = 2
+                
+                
 
         return self.worldSurface
     

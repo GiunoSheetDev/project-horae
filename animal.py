@@ -5,7 +5,7 @@ import random
 from overrides import override
 
 class Animal:
-    def __init__(self, id : int):
+    def __init__(self, id : int, foodMap: list[list[int]]):
         self.animal : str 
         self.id = id
         
@@ -41,11 +41,17 @@ class Animal:
 
         self.visibilityRadius = 5
         self.getPixelDimensionOfSpriteBasedOnAnimalType()
+        self.foodMap = foodMap
+        print(self.foodMap)
 
 
         self.memory = { #each animal remembers the closest resource of each type
-            "water" : (-1, -1),
-            "food"  : (-1, -1),
+            "water" : random.choice([(row, tile.index(2))
+                                     for row, tile in enumerate(self.foodMap)
+                                     if 2 in tile]),
+            "food"  : random.choice([(row, tile.index(1))
+                                     for row, tile in enumerate(self.foodMap)
+                                     if 1 in tile]),
         }
         
 
@@ -88,6 +94,10 @@ class Animal:
     def checkNeeds(self) -> None:
         #checks for thirst and hunger and determines if the state 
         # is looking for food or not
+        if self.currentState == "eating":
+            if self.hunger == self.maxHunger or self.thirst == self.maxThirst:
+                self.currentState = "wandering"
+
         if self.hunger < self.needThreshold or self.thirst < self.needThreshold:
             self.currentState = "looking-for-resources"
         else:
@@ -146,18 +156,42 @@ class Animal:
                 self.path = (int(self.endPosition[0] - self.currentPosition[0]), int(self.endPosition[1] - self.currentPosition[1]))
 
             case "looking-for-resources":
-                #TODO create logic to look for closest resource
-
                 self.currentPosition = (int(self.position[0]), int(self.position[1]))
-                self.endPosition = (random.randint(self.minRandomPositionLimit, self.maxRandomPositionLimit), random.randint(self.minRandomPositionLimit, self.maxRandomPositionLimit))
+                
+                if self.currentPosition == self.memory["water"]:
+                    self.path = "eating"
+                    self.currentState = "eating"
+
+                elif self.currentPosition == self.memory["food"]:
+                    
+                    self.path = "eating"
+                    self.currentState = "eating"
+                    
+
+                #choose which need to satisfy first
+                if self.thirst <= self.hunger:
+                    self.endPosition = self.memory["water"]
+                else:
+                    self.endPosition = self.memory["food"]
+                
                 self.path = (int(self.endPosition[0] - self.currentPosition[0]), int(self.endPosition[1] - self.currentPosition[1]))
-        
-        
+    
+            case "eating":
+                self.path = "eating"
+                
+
+    
         
 
 
     def translatePath(self) -> None:
         #given the path modify the pathData to adjust for speed
+        if self.path == "eating":
+            deltaTime = self.maxHunger / 2
+            self.pathData.extend(["idle"] * deltaTime)
+            return
+
+
         if self.path == "idle":
             self.pathData.extend(["idle"] * len(self.animationDict["idle"][self.currentDirection])*6)  #dunno why but 6 seems to work best)
             return
@@ -212,6 +246,7 @@ class Animal:
         if self.pathData[0] == "howl":
             return
         
+
         self.currentDirection = self.pathData[0]
         self.currentFrame = 0
 
@@ -277,10 +312,10 @@ class Animal:
 
 
 class Stag(Animal):
-    def __init__(self, id):
+    def __init__(self, id, foodmap):
         self.animal = "stag"
         self.states = ["idle", "walk", "run"]
-        super().__init__(id)
+        super().__init__(id, foodmap)
     
     @override
     def setMovementStateAndSpeed(self, newMovementState = "temp"):
@@ -301,15 +336,15 @@ class Stag(Animal):
                         self.speed = 0.02
         
 class Badger(Animal):
-    def __init__(self, id):
+    def __init__(self, id, foodmap):
         self.animal = "badger"
-        super().__init__(id)
+        super().__init__(id, foodmap)
 
 class Boar(Animal):
-    def __init__(self, id):
+    def __init__(self, id, foodmap):
         self.animal = "boar"
         self.states = ["idle", "run"]
-        super().__init__(id)
+        super().__init__(id, foodmap)
 
     @override
     def setMovementStateAndSpeed(self, newMovementState = "temp"):
@@ -330,10 +365,10 @@ class Boar(Animal):
 
 
 class Wolf(Animal):
-    def __init__(self, id):
+    def __init__(self, id, foodmap):
         self.animal = "wolf"
         self.states = ["idle", "bite", "howl", "run", "death"]
-        super().__init__(id)
+        super().__init__(id, foodmap)
     
     @override
     def setMovementStateAndSpeed(self, newMovementState = "temp"):

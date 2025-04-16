@@ -10,6 +10,7 @@ from ui import AnimalInspector
 from worldGeneration.config import *
 from worldGeneration.perlinNoise import *
 
+
 pygame.init()
 
 class Test:
@@ -35,18 +36,20 @@ class Test:
 
 
     def run(self):
+        input = InputManager()
+        world = World()
+        
         animalList = []
         
         
-        stag = Stag(0)
-        stag2 = Stag(1)
-        boar = Boar(2)
-        wolf = Wolf(3)
+        stag = Stag(0, world.vegetarianFoodMap)
+        stag2 = Stag(1, world.vegetarianFoodMap)
+        boar = Boar(2, world.vegetarianFoodMap)
+        wolf = Wolf(3, world.vegetarianFoodMap)
             
         animalList.extend([stag, stag2, boar, wolf])
         run = True
-        input = InputManager()
-        world = World()
+        
 
         while run:
             input.handleEvents()
@@ -60,7 +63,6 @@ class Test:
             for animal in animalList:
                 animal.update(self.screen, backgroundStartingX=self.backgroundStartingX, backgroundStartingY=self.backgroundStartingY, mousePos=self.mousePos)
             
-            #print(stagList[0].currentPosition, stagList[0].endPosition, stagList[0].path, stagList[0])
             
             if input.isActionPressed("escape"):
                 run = False
