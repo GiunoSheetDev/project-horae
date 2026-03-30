@@ -4,7 +4,6 @@ import numpy.typing as npt
 import random
 
 from noise import pnoise2
-from multiprocessing import Pool
 
 
 from config import *
@@ -35,12 +34,16 @@ class World:
         self.world_raw : dict[tuple[int, int], npt.NDArray] = {} #pre collapsed tile
         self.world : dict[tuple[int, int], npt.NDArray] = {} #post collapsed tile
         self.world_images : dict[tuple[int, int], pygame.Surface] = {}
+        self.world_trees_probs : dict[tuple[int, int], npt.NDArray] = {} #probability for deterministic tree collapsing
+        self.world_trees_types : dict[tuple[int, int], npt.NDArray] = {}
+        self.world_trees_images : dict[tuple[int, int], pygame.Surface] = {}
 
         self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
         self.tile_offset = (self.seed * 0.003, self.seed * 0.007)
 
-        self._create_initial_world()
+        self.season = "summer"
 
+        self._create_initial_world()
 
     def _load_assets(self) -> None:
         for img in os.listdir(ASSET_PATH_BACKGROUND):
@@ -84,7 +87,7 @@ class World:
 
     def _noise_to_biome(self, value: float) -> Biome:
         if value < -0.05:   return Biome.OCEAN
-        elif value < 0.10:  return Biome.PLAIN
+        elif value < 0.05:  return Biome.PLAIN
         else:               return Biome.FOREST
 
     def _noise_to_tile(self, tile_value: float, biome_value: float) -> int:
@@ -94,12 +97,11 @@ class World:
 
         elif biome_value < 0.10:     # PLAIN
             if tile_value < -0.35:   return Tile.WATER.value
-            elif tile_value < 0.40:  return Tile.PLAIN.value
+            elif tile_value < 0.15:  return Tile.PLAIN.value
             else:                    return Tile.FOREST.value
 
         else:                        # FOREST
-            if tile_value < -0.30:   return Tile.WATER.value
-            elif tile_value < 0.0:   return Tile.PLAIN.value
+            if tile_value < 0.0:     return Tile.PLAIN.value
             else:                    return Tile.FOREST.value
 
     
@@ -125,6 +127,10 @@ class World:
                 chunk[y, x] = self._noise_to_tile(tile_value, biome_value)
 
         self.world[chunk_index] = chunk
+
+    def _generate_tree_probabilities(self, chunk_index: tuple[int, int]) -> None:
+        self.world_trees_probs[chunk_index] = np.random.random((self.chunk_size, self.chunk_size))
+        self.world_trees_types[chunk_index] = np.random.randint(0, 10, (self.chunk_size, self.chunk_size))
 
     def _collapse_water(self, chunk_index: tuple[int, int]) -> None:
         '''Classify raw WATER tiles into edge variants based on neighbors.'''
@@ -177,15 +183,16 @@ class World:
                 # restore raw tiles before re-collapsing
                 self.world[neighbor] = self.world_raw[neighbor].copy()
                 self._collapse_water(neighbor)
-                self._generate_chunk_image(neighbor)
+                self._generate_chunk_image(neighbor, self.season)
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
         self.world[chunk_index] = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
+        self._generate_tree_probabilities(chunk_index)
         self._assign_biome(chunk_index)
         self._generate_tiles(chunk_index)
         self.world_raw[chunk_index] = self.world[chunk_index].copy()
         self._collapse_water(chunk_index)
-        self._generate_chunk_image(chunk_index)
+        self._generate_chunk_image(chunk_index, self.season)
         self._recollapse_neighbors(chunk_index)
         
     def _create_initial_world(self) -> None:
@@ -196,39 +203,67 @@ class World:
     
     # --  Rendering -- #
 
-    def _generate_chunk_image(self, chunk_index: tuple[int, int]) -> None:
+    def _generate_chunk_image(self, chunk_index: tuple[int, int], season:str) -> None:
         chunk = self.world[chunk_index]
+        season = season.lower()
 
         TILE_W = 32 * SCALE
         TILE_H = 32 * SCALE  
+        TREE_OVERHEAD = 96
 
         surf_w = 32 * self.chunk_size + TILE_W
-        surf_h = 16 * self.chunk_size + TILE_H + 32
+        surf_h = 16 * self.chunk_size + TILE_H + 32 + TREE_OVERHEAD
         surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        tree_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
 
-        
         origin_x = TILE_W // 2
 
         for y in range(self.chunk_size):
             for x in range(self.chunk_size):
                 tile = Tile(chunk[y, x])
+                tree_img = None
 
                 match tile:
-                    case Tile.PLAIN:        img = self.background_assets["EMPTY"]
-                    case Tile.FOREST:       img = self.background_assets["PLAIN_SUMMER"]
-                    case Tile.WATER:        img = self.background_assets["WATER_MID_0"]
-                    case Tile.WATER_EXT:    img = self.background_assets["WATER_EXT_0"]
-                    case Tile.WATER_INT:    img = self.background_assets["WATER_INT_0"]
-                    case Tile.WATER_LEFT:   img = self.background_assets["WATER_LEFT_0"]
-                    case Tile.WATER_RIGHT:  img = self.background_assets["WATER_RIGHT_0"]
-                    case Tile.WATER_MID:    img = self.background_assets["WATER_MID_0"]
-                    case _:                 img = self.background_assets["rock"]
+                    case Tile.PLAIN:        
+                        img = self.background_assets[f"PLAIN_{season.upper()}"]
+                    case Tile.FOREST:       
+                        img = self.background_assets[f"PLAIN_{season.upper()}"]
+                        tree_prob = self.world_trees_probs[chunk_index][y, x]
+                        if tree_prob <= TREE_PROBABILITY:
+                            tree_img = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_{season}"]
+                    case Tile.WATER:        
+                        img = self.background_assets["WATER_MID_0"]
+                    case Tile.WATER_EXT:    
+                        img = self.background_assets["WATER_EXT_0"]
+                    case Tile.WATER_INT:    
+                        img = self.background_assets["WATER_INT_0"]
+                    case Tile.WATER_LEFT:   
+                        img = self.background_assets["WATER_LEFT_0"]
+                    case Tile.WATER_RIGHT:  
+                        img = self.background_assets["WATER_RIGHT_0"]
+                    case Tile.WATER_MID:    
+                        img = self.background_assets["WATER_MID_0"]
+                    case _:                 
+                        img = self.background_assets["rock"]
 
                 blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
-                blit_y = x * 8 + y * 8
+                blit_y = x * 8 + y * 8 + TREE_OVERHEAD
                 surface.blit(img, (blit_x, blit_y))
 
+                if tree_img is not None:
+                    anchor_x, anchor_y = TREE_ANCHORS.get(self.world_trees_types[chunk_index][y, x], (tree_img.get_width() // 2, tree_img.get_height()))
+
+                    tile_center_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16 + 16
+                    tile_base_y   = x * 8 + y * 8 + 16 * SCALE + TREE_OVERHEAD
+
+                    tree_blit_x = tile_center_x - anchor_x
+                    tree_blit_y = tile_base_y - anchor_y
+
+                    tree_surface.blit(tree_img, (tree_blit_x, tree_blit_y))
+
+
         self.world_images[chunk_index] = surface
+        self.world_trees_images[chunk_index] = tree_surface
 
     def _generate_world_image(self, season: str) -> None:
         self.world_images.clear()
@@ -246,18 +281,18 @@ class World:
 
         return out
 
-    def _get_chunks_from_indices(self, chunk_indices: list[tuple[int, int]]) -> dict:
+    def _get_chunks_from_indices(self, chunk_indices: list[tuple[int, int]], dictionary: dict) -> dict:
         out = {}
         for index in chunk_indices:
-            if index in self.world.keys():
-                out[index] = self.world_images[index]
+            if index in dictionary.keys():
+                out[index] = dictionary[index]
             else:
                 self._generate_chunk(index)
-                out[index] = self.world_images[index]
+                out[index] = dictionary[index]
         
         return out
 
-    def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
+    def _get_chunk_from_camera_pos(self, camera_pos: tuple[int, int]) -> tuple[int, int]:
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
         TILE_H = 16 * SCALE
@@ -289,12 +324,20 @@ class World:
 
         selected_chunk = (chunk_y, chunk_x)
 
-        drawable_chunks = self._get_drawable_chunks(selected_chunk)
-        drawable_chunks = self._get_chunks_from_indices(drawable_chunks)
+        return selected_chunk
 
+    def _draw_background_layer(self, screen, camera_pos, drawable_chunks_indices) -> None:
+        drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices, self.world_images)
         sorted_chunks = sorted(drawable_chunks.items(), key=lambda kv: kv[0][0] + kv[0][1])
 
+        cam_x, cam_y = camera_pos
+        TILE_W = 32 * SCALE
+        TILE_H = 16 * SCALE
+        
+        half_w = TILE_W // 2
+        half_h = TILE_H // 2
 
+        origin_x = half_w
 
 
         for (y0, x0), surface in sorted_chunks:
@@ -305,6 +348,38 @@ class World:
             draw_y = iso_y - cam_y
 
             screen.blit(surface, (draw_x, draw_y))
+
+    def _draw_tree_layer(self, screen, camera_pos, drawable_chunks_indices) -> None:
+        drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices, self.world_trees_images)
+        sorted_chunks = sorted(drawable_chunks.items(), key=lambda kv: kv[0][0] + kv[0][1])
+        cam_x, cam_y = camera_pos
+        TILE_W = 32 * SCALE
+        TILE_H = 16 * SCALE
+        
+        half_w = TILE_W // 2
+        half_h = TILE_H // 2
+
+        origin_x = half_w
+
+
+        for (y0, x0), surface in sorted_chunks:
+            iso_x = (x0 - y0) * half_w - origin_x
+            iso_y = (x0 + y0) * half_h
+
+            draw_x = iso_x - cam_x
+            draw_y = iso_y - cam_y
+
+            screen.blit(surface, (draw_x, draw_y))
+
+    def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
+        selected_chunk = self._get_chunk_from_camera_pos(camera_pos)
+        drawable_chunks_indices = self._get_drawable_chunks(selected_chunk)
+
+        self._draw_background_layer(screen, camera_pos, drawable_chunks_indices)
+
+        #here in the middle draw the animals so the z layer is behind tree but on top of background
+
+        self._draw_tree_layer(screen, camera_pos, drawable_chunks_indices)
 
     
     # -- Public Methods -- #
@@ -337,7 +412,10 @@ if __name__ == "__main__":
 
     is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
 
-    while True:
+    is_running = True
+
+    while is_running:
+        
         
         screen.fill((0, 0, 0))
         w._draw(screen, (camerax, cameray))
@@ -355,9 +433,12 @@ if __name__ == "__main__":
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                break
+                is_running = False
                 
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    is_running = False
+
                 if event.key == pygame.K_a:
                     is_moving_left = True
                 elif event.key == pygame.K_d:

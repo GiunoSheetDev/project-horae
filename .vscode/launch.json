@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run world.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/world.py",
+            "console": "integratedTerminal"
+        }
+    ]
+}
