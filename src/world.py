@@ -1,863 +1,320 @@
-from noise import pnoise2
-from config import *
 import pygame
-import os
-import sys 
-import subprocess
-import textwrap
-import json
 import numpy as np
-import shutil
-import warnings
-import time
+import numpy.typing as npt
+import random
+
+from noise import pnoise2
+from multiprocessing import Pool
 
 
-from animal import Animal
-from inspectorWindow import InspectorWindow
+from config import *
+
+'''
+NAMING CONVENTION
+
+create_*   → allocates/initialises empty structures
+generate_* → fills with actual content (noise, images)
+add_*      → public API for adding new chunks at runtime
+
+
+
+'''
 
 
 class World:
-    def __init__(self, seed:int=None, createNewImages:bool = True):
-        pygame.init()
-        os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        warnings.filterwarnings("ignore", category=UserWarning, message="libpng warning: bKGD: invalid")
+    def __init__(self, seed: int = None):
+        self.gridw, self.gridh = GRIDW, GRIDH
+        self.chunk_size = CHUNK_SIZE
         
+        self.seed = seed if seed is not None else random.randint(1, 999999)
+
+        self.background_assets = {}
+        self._load_assets()
+
+        self.chunk_biomes : dict[tuple[int, int], Biome] = {}
+        self.world : dict[tuple[int, int], npt.NDArray] = {}
+        self.world_images : dict[tuple[int, int], pygame.Surface] = {}
+
+        self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
+        self.tile_offset = (self.seed * 0.003, self.seed * 0.007)
+
+        self._create_initial_world()
 
 
-        self.width, self.heigth = gridw, gridh
-        self.seed = seed
-         
-        
-        
-        self.isShowingAerialView = False
-        self.aerialViewProcess = None
-        
-        #images arent loaded with convert_alpha since a screen is not initialized, 
-        #once a screen is set up make sure to call self.dictConvertAlpha to make images transparent
-        #make sure to set the screen with pygame.SCRALPHA
-        self.dicts = [] 
-        self.backgroundAssetDict = self.loadBackgroundAssets()
-
-        self.clock = pygame.time.Clock()
-    
-        if createNewImages:
-            self.grid = self.createGrid()
-            self.clearDirectory("src/data/Summer")
-            self.clearDirectory("src/data/Autumn")
-            self.clearDirectory("src/data/Winter")
-            self.surfaceList, self.treeList = self.createSurfaceList()
-
-        else:
-            with open("src\\data\\worldGrid.json", "r") as file:
-                self.grid = json.load(file)
-            self.surfaceList, self.treeList = self.loadImages()
-
-        
-        self.surfaceSeasonIndex = 0
-        self.surfaceFrameIndex = 0
-        if isinstance(self.surfaceList[self.surfaceSeasonIndex][self.surfaceFrameIndex], pygame.Surface): 
-            self.surface = self.surfaceList[self.surfaceSeasonIndex][self.surfaceFrameIndex]
-            self.treeSurface = self.treeList[self.surfaceSeasonIndex][0]
-        else:
-            self.surface = pygame.Surface((gridw, gridh))
-        
-        self.surfaceAnimationCooldown = 250
-        self.surfaceUpdateTime = pygame.time.get_ticks()
-        self.seasonAnimationCooldown = 60 * 3 * 1000 #3 minutes
-        self.seasonUpdateTime = pygame.time.get_ticks()
-        
-
-        self.isMovingLeft, self.isMovingRight, self.isMovingUp, self.isMovingDown = False, False, False, False
-        self.isFastMoving = False
-        self.isRunning = True
-        
-        self.fontPath = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)), "assets")
-        self.font = pygame.font.Font(os.path.join(self.fontPath, "kingdomFont.otf"), 48)
-        self.seasonText = None
-        self.isShowingText = False
-        self.alphaFloat = 255.0
-        self.alphaStep = 255 / 300
-        self.textColor = (255, 206, 120)
-        self.hasDisplayedApproachingText = False
-
-        self.animalList = []
-        self.selectedAnimal = None
-        self.inspectorWindow = None
-        
-    ################################################################### LOAD ASSETS ###################################################################
-    
-    def loadBackgroundAssets(self) -> dict:
-        d = {}
-        path =  os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),  # Gets src directory
-                os.pardir,                                  
-                'assets',                                 
-                'Isometric Environment',
-                'Tiles'
-        )
-        for img in os.listdir(path):
-            loadImg = pygame.image.load(f"{path}\\{img}")
+    def _load_assets(self) -> None:
+        for img in os.listdir(ASSET_PATH_BACKGROUND):
+            load_img = pygame.image.load(f"{ASSET_PATH_BACKGROUND}\\{img}").convert_alpha()
+            load_img = pygame.transform.scale_by(load_img, SCALE)
             name = img.replace(".png", "")
-            d[name] = loadImg
+            self.background_assets[name] = load_img
 
-        self.dicts.append(d)
-        return d 
+    # -- Noise Helpers -- #
+
+    def _biome_noise(self, wx: float, wy: float) -> float:
+        ox, oy = self.biome_offset
+
+        warp_strength = 18.0 #20-30 range means more fractal coast. #8-12 range gentler coastal curves
+        warp_x = pnoise2(wx * 0.015 + ox + 1.7, wy * 0.015 + oy + 9.2, octaves=2)
+        warp_y = pnoise2(wx * 0.015 + ox + 5.3, wy * 0.015 + oy + 3.1, octaves=2)
+
+        return pnoise2(
+            (wx + warp_x * warp_strength) * BIOME_SCALE + ox,
+            (wy + warp_y * warp_strength) * BIOME_SCALE + oy,
+            octaves=5,
+            persistence=0.55,
+            lacunarity=2.1
+        )
         
-    def dictConvertAlpha(self) -> None:
-        for d in self.dicts:
-            for name in d:
-                d[name] = d[name].convert_alpha()
-        
-    def clearDirectory(self, path):
-        for filename in os.listdir(path):
-            filePath = os.path.join(path, filename)
-            try:
-                if os.path.isfile(filePath) or os.path.islink(filePath):
-                    os.remove(filePath)  
-                elif os.path.isdir(filePath):
-                    shutil.rmtree(filePath)  
-            except Exception as e:
-                pass
-    
-    def loadImages(self) -> tuple[list[pygame.Surface], list[pygame.Surface]]:
-
-        out1 = [] #terrain surface
-        out2 = [] #tree surface
-        for season in ["Summer", "Autumn", "Winter"]:
-            path = f"src/data/{season}"
-            tempout1 = []
-            tempout2 = []
-            for filename in os.listdir(path):
-                imgname = os.path.join(path, filename)
-                img = pygame.image.load(imgname).convert_alpha()
-                if "tree" in imgname:
-                    
-                    tempout2.append(img)
-                else:
-                    
-                    tempout1.append(img)
-            out1.append(tempout1)
-            out2.append(tempout2)
-
-
-        return (out1, out2)
-
-    ################################################################### END LOAD ASSETS ###################################################################
-
-    ################################################################### GRID GENERATION ###################################################################
-
-
-  
-    def generateGrid(self, seed: int = None) -> list[list[int]]:
+    def _tile_noise(self, wx: float, wy: float) -> float:
         '''
-        Terrain encoding:
-        0  = background / initial default (should be overwritten)
-        1  = plains
-        2  = tree areas without actual tree tiles
-        3-7  = water tiles (classified into types)
-        10-19 = tree tiles
-        20-26 = grass tiles
-        27-36 = foliage / misc tiles
+        Fine scale noise that decides individual tiles
         '''
-
-        def normalize(num):
-            # Normalize noise value from [-1, 1] to [0, 1]
-            return (num + 1) / 2
-
-        width, heigth = self.width, self.heigth
-
-        # Use provided seed or generate a random one
-        if seed is None:
-            seed = np.random.randint(0, 1000)
-        rng = np.random.default_rng(seed)
-
-        # Initialize data arrays
-        normalizedNoise = np.zeros((width, heigth), dtype=np.float32)
-        grid = np.zeros((width, heigth), dtype=int)
-
-        # Pre-generate tile values and probabilities for forests, grass, and foliage
-        forestList = rng.integers(10, 20, size=(width, heigth))
-        forestProbability = rng.integers(0, 3, size=(width, heigth))  # ~33% chance
-
-        grassList = rng.integers(20, 26, size=(width, heigth), endpoint=True)
-        grassProbability = rng.integers(0, 10, size=(width, heigth), endpoint=True)  # ~70% if < 7
-
-        foilageMiscList = rng.integers(27, 33, size=(width, heigth), endpoint=True)
-        foilageMiscProbability = rng.integers(0, 60, size=(width, heigth))  # ~1 in 60 chance
-
-        # Generate layered Perlin noise for terrain base
-        for y in range(width):
-            coord_y = (y / heigth) * 4
-            for x in range(heigth):
-                coord_x = (x / width) * 4
-
-                val = (
-                    pnoise2(coord_x, coord_y, octaves=3, base=seed)
-                    + 0.5 * pnoise2(coord_x, coord_y, octaves=6, base=seed)
-                    + 0.25 * pnoise2(coord_x, coord_y, octaves=12, base=seed)
-                    + 0.125 * pnoise2(coord_x, coord_y, octaves=24, base=seed)
-                )
-
-                normalizedNoise[y, x] = normalize(val)
-
-        # Determine base terrain types based on noise
-        plains_mask = (normalizedNoise >= 0.4) & (normalizedNoise < 0.6)  # Moderate terrain
-        forest_mask = (normalizedNoise >= 0.6) & (forestProbability == 0)  # Higher terrain with forest probability
-        terrain_mask = (normalizedNoise >= 0.6) & ~forest_mask  # Higher terrain but no forest
-        water_mask = normalizedNoise < 0.4  # Low terrain → water
-
-        # Assign basic terrain types
-        grid[plains_mask] = 1  # Plains
-        grid[forest_mask] = forestList[forest_mask]  # Forest tiles (actual tree tiles)
-        grid[terrain_mask] = 2  # Tree area without specific trees
-
-        # Helper function to shift arrays for adjacency checks
-        def shift(arr, dy, dx):
-            padded = np.pad(arr, ((1, 1), (1, 1)), constant_values=False)
-            return padded[1 + dy : 1 + dy + arr.shape[0], 1 + dx : 1 + dx + arr.shape[1]]
-
-        # Spread tree-area terrain (2) into adjacent plains to blend biome edges
-        for _ in range(4):  # Apply 4 times for gradual spread
-            plains_to_upgrade = np.zeros_like(grid, dtype=bool)
-            for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                shifted = shift(grid == 2, dy, dx)
-                plains_to_upgrade |= (grid == 1) & shifted
-            grid[plains_to_upgrade] = 2
-
-        # Recalculate mask for remaining plains after terrain spreading
-        newTerrainMask = (grid == 1)
-
-        # Apply grass tiles on plains with high probability (~70%)
-        grassTerrainMask = newTerrainMask & (grassProbability < 7)
-        grid[grassTerrainMask] = grassList[grassTerrainMask]
-
-        # Apply foliage/misc tiles on plains with very low probability (~1 in 60)
-        foilageTerrainMask = newTerrainMask & (foilageMiscProbability == 1)
-        grid[foilageTerrainMask] = foilageMiscList[foilageTerrainMask]
-
-        # --- Water type classification ---
-        # Determine type of water tile based on adjacency for visual variety
-        top = shift(water_mask, -1, 0)
-        left = shift(water_mask, 0, -1)
-        top_left = shift(water_mask, -1, -1)
-
-        water_type = np.zeros_like(grid)
-
-        # Water type classification based on neighbor patterns
-        water_type[(~top_left & top & left)] = 3
-        water_type[(~top_left & ~top & ~left) | (top_left & ~top & ~left)] = 4
-        water_type[(~top_left & ~top & left) | (top_left & ~top & left)] = 5
-        water_type[(~top_left & top & ~left) | (top_left & top & ~left)] = 6
-        water_type[(top_left & top & left)] = 7
-
-        # Apply classified water tiles
-        grid[water_mask] = water_type[water_mask]
-
-        return grid.tolist()
+        ox, oy = self.tile_offset
+        return pnoise2(
+            wx * TILE_SCALE + ox,
+            wy * TILE_SCALE + oy,
+            octaves = 4,
+            persistence = 0.5,
+            lacunarity = 2.0
+        )
 
 
-    def createGrid(self) -> list[list[int]]:        
-        out = self.generateGrid(self.seed)
-        with open("src/data/worldGrid.json", "w") as file:
-            json.dump(out, file)
-        
-        return out
+    # -- Biome / Tile Mapping -- #
 
-    @staticmethod
-    def drawAerialView(screen, grid, width, heigth) -> None:
-        
-        for y in range(len(grid)):
-            for x in range(len(grid[y])):
-                value = grid[y][x]
-                if value == 1:
-                    pygame.draw.rect(screen, (142, 214, 107), pygame.Rect(x * screenw / width , y* screenh / heigth, screenw / width, screenh / heigth))
-                    
-                elif 10 <= value <= 34 or value == 2:
-                    pygame.draw.rect(screen, (31, 82, 6), pygame.Rect(x * screenw / width , y* screenh / heigth, screenw / width, screenh / heigth))     
-                    
-                else:
-                    pygame.draw.rect(screen, (13, 132, 201), pygame.Rect(x  * screenw / width , y* screenh / heigth, screenw / width, screenh / heigth))
-                    
-    def showAerialView(self) -> None:
-        self.isShowingAerialView = True
-        with open("src\\aerialView.pyw", "w") as file:
-            file.write(textwrap.dedent('''\\
-import pygame
-from world import World
-from config import *
-import json
-import os
-                    
+    def _noise_to_biome(self, value: float) -> Biome:
+        if value < -0.05:   return Biome.OCEAN
+        elif value < 0.10:  return Biome.PLAIN
+        else:               return Biome.FOREST
 
-with open("src/data/worldGrid.json", "r") as file:
-    worldGrid = json.load(file)
-                            
-pygame.init()
-screen = pygame.display.set_mode((screenw, screenh))
-isRunning = True
-while isRunning:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            isRunning = False
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                isRunning = False
+    def _noise_to_tile(self, tile_value: float, biome_value: float) -> int:
+        if biome_value < -0.05:      # OCEAN
+            if tile_value < 0.30:    return Tile.WATER.value
+            else:                    return Tile.PLAIN.value
+
+        elif biome_value < 0.10:     # PLAIN
+            if tile_value < -0.35:   return Tile.WATER.value
+            elif tile_value < 0.40:  return Tile.PLAIN.value
+            else:                    return Tile.FOREST.value
+
+        else:                        # FOREST
+            if tile_value < -0.30:   return Tile.WATER.value
+            elif tile_value < 0.0:   return Tile.PLAIN.value
+            else:                    return Tile.FOREST.value
 
     
-    World.drawAerialView(screen, worldGrid, 400, 400)
-    pygame.display.flip()
-    pygame.time.Clock().tick(60)
-pygame.quit()
-os.remove(os.path.abspath(__file__))
+    # -- Chunk Generation -- #
 
-        '''))
-        
-        self.aerialViewProcess = subprocess.Popen([sys.executable, "src/aerialView.pyw"])
-    
-    def checkAerialViewProcess(self) -> int:
-        if self.aerialViewProcess.poll() is None:
-            return 0
-        
-        return 1
+    def _assign_biome(self, chunk_index: tuple[int, int]) -> None:
+        y0, x0 = chunk_index
 
+        #sample noise at chunk center
+        cx, cy = (x0 + self.chunk_size/2), (y0 + self.chunk_size/2)
+        value = self._biome_noise(cx, cy)
+        self.chunk_biomes[chunk_index] = self._noise_to_biome(value)
 
-    ################################################################### END GRID GENERATION ###################################################################
+    def _generate_tiles(self, chunk_index: tuple[int, int]) -> None:
+        y0, x0 = chunk_index
+        chunk = self.world[chunk_index]
 
-    ################################################################### SURFACE CREATION ###################################################################
+        for y in range(self.chunk_size):
+            for x in range(self.chunk_size):
+                wx, wy = x0 + x, y0 + y
+                tile_value  = self._tile_noise(wx, wy)
+                biome_value = self._biome_noise(wx, wy)
+                chunk[y, x] = self._noise_to_tile(tile_value, biome_value)
 
-    def createTreeSurface(self, season:str) -> None:
-        with open(f"src\\create{season}TreeSurface.pyw", "w") as file:
-            file.write(textwrap.dedent('''\\
-                                       
-import pygame
-import os
-import json
-from config import *
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message="libpng warning: bKGD: invalid")
+        self.world[chunk_index] = chunk
 
-os.environ["SDL_VIDEODRIVER"] = "dummy"
+    def _collapse_water(self, chunk_index: tuple[int, int]) -> None:
+        """Classify raw WATER tiles into edge variants based on neighbors."""
 
-pygame.init()
-pygame.display.set_mode((1, 1))
-surface = pygame.Surface((32*gridw, 16*gridh + 32), pygame.SRCALPHA)
+        WATER_VAL = Tile.WATER.value
 
-name = os.path.basename(__file__)
-                                       
-if "Winter" in name:
-    season = "Winter"
-    mseason = "winter"
-if "Autumn" in name:
-    season = "Autumn"
-    mseason = "autumn"
-if "Summer" in name:
-    season = "Summer"
-    mseason = "summer"
+        def get_tile(y, x) -> int:
+            """Read a tile, looking into neighbor chunks if needed."""
+            cy = (y0 + (y // self.chunk_size) * self.chunk_size
+                  if y >= self.chunk_size else
+                  y0 - self.chunk_size if y < 0 else y0)
+            cx = (x0 + (x // self.chunk_size) * self.chunk_size
+                  if x >= self.chunk_size else
+                  x0 - self.chunk_size if x < 0 else x0)
 
+            # clamp local coords
+            ly = y % self.chunk_size
+            lx = x % self.chunk_size
 
-with open("src/data/worldGrid.json", "r") as file:
-    grid = json.load(file)
+            nidx = (cy, cx)
+            if nidx in self.world:
+                t = int(self.world[nidx][ly, lx])
+                # treat specialized water variants as water for edge detection
+                if t in (Tile.WATER_EXT.value, Tile.WATER_INT.value,
+                         Tile.WATER_LEFT.value, Tile.WATER_RIGHT.value,
+                         Tile.WATER_MID.value):
+                    return WATER_VAL
+                return t
+            return Tile.PLAIN.value  # default for missing chunks
 
-def loadAssets() -> dict:
-    d = {}
-    path =  os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            os.pardir,
-            "assets",
-            "Isometric Environment",
-            "Tiles")
-    
-    for img in os.listdir(path):
-        loadimg = pygame.image.load(f"{path}\\{img}").convert_alpha()
-        name = img.replace(".png", "")
-        d[name] = loadimg
-    
-    return d
+        y0, x0 = chunk_index
+        chunk = self.world[chunk_index].copy()
 
-backgroundAssetDict = loadAssets()
-
-for y in range(gridw):
-    for x in range(gridh):
-        value = grid[y][x]
-        treeImg = None
-        miscImg = None
-        match value:
-            case 10:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 11:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 12:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 13:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 14:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 15:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 16:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 17:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 18:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            case 19:
-                treeImg = backgroundAssetDict[f"treeG{value-10}{season}"]
-            
-            
-        if treeImg != None:
-            surface.blit(treeImg, ((32*gridw)/2 +x*16 - y*16, x*8+y*8 -70))
-        
-                            
-
-
-pygame.image.save(surface, f"src/data/{season}/{season}treeSurface.png")
-pygame.quit()
-os.remove(os.path.abspath(__file__))
-
-
-
-'''))
-            
-
-        createSurfaceProcess = subprocess.Popen([sys.executable, f"src\\create{season}treeSurface.pyw"])
-        return createSurfaceProcess
-                               
-    def createSeasonSurface(self, season:str, framenum: int) -> None:
-        with open(f"src\\create{season}{framenum}Surface.pyw", "w") as file:
-            file.write(textwrap.dedent('''\\
-        
-import pygame
-import os
-import json
-from config import *
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message="libpng warning: bKGD: invalid")
-
-os.environ["SDL_VIDEODRIVER"] = "dummy"
-
-pygame.init()
-pygame.display.set_mode((1, 1))
-surface = pygame.Surface((32*gridw, 16*gridh + 32), pygame.SRCALPHA)
-
-name = os.path.basename(__file__)
-                                       
-if "Winter" in name:
-    season = "Winter"
-    mseason = "winter"
-if "Autumn" in name:
-    season = "Autumn"
-    mseason = "autumn"
-if "Summer" in name:
-    season = "Summer"
-    mseason = "summer"
-                                       
-framenum = int(name[-12])
-
-
-
-with open("src/data/worldGrid.json", "r") as file:
-    grid = json.load(file)
-
-def loadAssets() -> dict:
-    d = {}
-    path =  os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            os.pardir,
-            "assets",
-            "Isometric Environment",
-            "Tiles")
-    
-    for img in os.listdir(path):
-        loadimg = pygame.image.load(f"{path}\\{img}").convert_alpha()
-        name = img.replace(".png", "")
-        d[name] = loadimg
-    
-    return d
-
-backgroundAssetDict = loadAssets()
-
-
-
-
-
-for y in range(gridw):
-    for x in range(gridh):
-        value = grid[y][x]
-        miscImg = None
-        img = None
-        match value:
-            case 1:
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 2:
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 3:
-                img = backgroundAssetDict[f"waterExt{framenum}"]
-            case 4:
-                img = backgroundAssetDict[f"waterInt{framenum}"]
-            case 5:
-                img = backgroundAssetDict[f"waterL{framenum}"]
-            case 6:
-                img = backgroundAssetDict[f"waterR{framenum}"]
-            case 7:
-                img = backgroundAssetDict[f"waterMid{framenum}"]  
-            case 10:
-                img = backgroundAssetDict[f"grassyDirt{season}"]  
-            case 11:
-                img = backgroundAssetDict[f"grassyDirt{season}"] 
-            case 12:
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 13:
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 14:
-                img = backgroundAssetDict[f"grassyDirt{season}"] 
-            case 15:
-                img = backgroundAssetDict[f"grassyDirt{season}"] 
-            case 16:
-                img = backgroundAssetDict[f"grassyDirt{season}"] 
-            case 17:
-                img = backgroundAssetDict[f"grassyDirt{season}"]  
-            case 18:
-                img = backgroundAssetDict[f"grassyDirt{season}"]  
-            case 19:
-                img = backgroundAssetDict[f"grassyDirt{season}"]                                         
-            case 20:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"] 
-            case 21:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 22:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 23:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 24:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 25:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 26:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 27:
-                miscImg = backgroundAssetDict[f"{mseason}Grass{value-20}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 28:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 29:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 30:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 31:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 32:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            case 33:
-                miscImg = backgroundAssetDict[f"{mseason}Misc{value-28}"]
-                img = backgroundAssetDict[f"grassyDirt{season}"]
-            
-                            
-        surface.blit(img, ((32*gridw)/2 +x*16 -y*16, x*8+y*8))
-        if miscImg != None:
-            surface.blit(miscImg, ((32*gridw)/2 +x*16 - y*16, x*8+y*8))               
-
-
-pygame.image.save(surface, f"src/data/{season}/{season}{framenum}Surface.png")
-pygame.quit()
-os.remove(os.path.abspath(__file__))
-
-'''))
-            
-        createSurfaceProcess = subprocess.Popen([sys.executable, f"src\\create{season}{framenum}Surface.pyw"])
-        return createSurfaceProcess
-
-    def updateSurfacePosition(self, hoffsetPrevious: int, voffsetPrevious: int) -> tuple[int, int]:
-        hoffset, voffset = hoffsetPrevious, voffsetPrevious
-        delta = 1 * 240 #base movement at 60 fps
-
-        if self.isFastMoving:
-            delta = 2 * 240
-
-        if self.isMovingDown:
-            voffset += delta * self.deltaTime
-        if self.isMovingUp:
-            voffset -= delta * self.deltaTime
-        if self.isMovingLeft:
-            hoffset -= delta * self.deltaTime
-        if self.isMovingRight:
-            hoffset += delta * self.deltaTime
-        
-        return (hoffset, voffset)
-    
-    def createSurfaceList(self) -> tuple[list[pygame.Surface], list[pygame.Surface]]:
-        
-        createdProcesses = []
-        processesProgress = [True] * (8*3 + 3)
-
-        pfS = self.createTreeSurface("Summer")
-        pfA = self.createTreeSurface("Autumn")
-        pfW = self.createTreeSurface("Winter")
-
-        createdProcesses.append(pfS)
-        createdProcesses.append(pfA)
-        createdProcesses.append(pfW)
-
-        for i in range(8): #8 is the length of the water animation
-            pS = self.createSeasonSurface("Summer", i)
-            pA = self.createSeasonSurface("Autumn", i)
-            pW = self.createSeasonSurface("Winter", i)
-            createdProcesses.append(pS)
-            createdProcesses.append(pA)
-            createdProcesses.append(pW)
-
-        while processesProgress != [False] *(8*3+3):
-            time.sleep(0.1)
-            for i in range(8*3+3):
-                if createdProcesses[i].poll() is None:
+        for y in range(self.chunk_size):
+            for x in range(self.chunk_size):
+                if chunk[y, x] != WATER_VAL:
                     continue
+
+                n_above = get_tile(y - 1, x) == WATER_VAL  # row above
+                n_left  = get_tile(y, x - 1) == WATER_VAL  # col left
+                n_diag  = get_tile(y - 1, x - 1) == WATER_VAL  # diagonal
+
+                if not n_above and not n_left:
+                    chunk[y, x] = Tile.WATER_INT.value
+                elif n_above and not n_left:
+                    chunk[y, x] = Tile.WATER_LEFT.value
+                elif not n_above and n_left:
+                    chunk[y, x] = Tile.WATER_RIGHT.value
+                elif n_diag and n_above and n_left:
+                    chunk[y, x] = Tile.WATER_MID.value
                 else:
-                    processesProgress[i] = False
+                    chunk[y, x] = Tile.WATER_EXT.value
 
-        #all process are done
-        out1 = [] #terrain surface
-        out2 = [] #tree surface
+        self.world[chunk_index] = chunk
 
-        out1, out2 = self.loadImages()
-        return (out1, out2)
-           
-    def updateSurfaceAnimation(self) -> None:
+    def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
+        self.world[chunk_index] = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
+        self._assign_biome(chunk_index)
+        self._generate_tiles(chunk_index)   
+        self._collapse_water(chunk_index)
+        self._generate_chunk_image(chunk_index)
         
-       
-        ################################################################### CHANGE OF SEASON LOGIC ###################################################################
-        #1 minute before the season it loads the images. 
-        #only if the next season hasnt loaded yet
-        
-        
-        if pygame.time.get_ticks() - self.seasonUpdateTime> (self.seasonAnimationCooldown - 60*1000) and not self.hasDisplayedApproachingText:
-            
-            nextIndex = (self.surfaceSeasonIndex +1) % 3
-            match nextIndex:
-                case 0: season = "Summer"
-                case 1: season = "Autumn"
-                case 2: season = "Winter"
+    def _create_initial_world(self) -> None:
+        for y in range(0, self.gridh, self.chunk_size):
+            for x in range(0, self.gridw, self.chunk_size):
+                self._generate_chunk((y, x))
 
-           
+    
+    # --  Rendering -- #
 
-            self.isShowingText = True
-            self.hasDisplayedApproachingText = True
-            self.alphaFloat = 255.0
-            self.showingTextTime = pygame.time.get_ticks()
+    def _generate_chunk_image(self, chunk_index: tuple[int, int]) -> None:
+        chunk = self.world[chunk_index]
 
-            self.seasonText = self.font.render(f"{season} is fast approaching.", True, self.textColor).convert_alpha()
-            
+        TILE_W = 32 * SCALE
+        TILE_H = 32 * SCALE  
+
+        surf_w = 32 * self.chunk_size + TILE_W
+        surf_h = 16 * self.chunk_size + TILE_H + 32
+        surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
 
         
+        origin_x = TILE_W // 2
 
-            
-        #update current season
-        if pygame.time.get_ticks() - self.seasonUpdateTime > self.seasonAnimationCooldown:
-            self.seasonUpdateTime = pygame.time.get_ticks()
-            self.surfaceSeasonIndex = (self.surfaceSeasonIndex +1 ) % len(self.surfaceList)
+        for y in range(self.chunk_size):
+            for x in range(self.chunk_size):
+                tile = Tile(chunk[y, x])
 
-            
+                match tile:
+                    case Tile.PLAIN:        img = self.background_assets["EMPTY"]
+                    case Tile.FOREST:       img = self.background_assets["PLAIN_SUMMER"]
+                    case Tile.WATER:        img = self.background_assets["WATER_MID_0"]
+                    case Tile.WATER_EXT:    img = self.background_assets["WATER_EXT_0"]
+                    case Tile.WATER_INT:    img = self.background_assets["WATER_INT_0"]
+                    case Tile.WATER_LEFT:   img = self.background_assets["WATER_LEFT_0"]
+                    case Tile.WATER_RIGHT:  img = self.background_assets["WATER_RIGHT_0"]
+                    case Tile.WATER_MID:    img = self.background_assets["WATER_MID_0"]
+                    case _:                 img = self.background_assets["rock"]
 
-            nextIndex = (self.surfaceSeasonIndex) % 3
-            match nextIndex:
-                case 0: season = "Summer"
-                case 1: season = "Autumn"
-                case 2: season = "Winter"
+                blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
+                blit_y = x * 8 + y * 8
+                surface.blit(img, (blit_x, blit_y))
 
-            self.seasonText = self.font.render(f"{season} is here.", True, self.textColor).convert_alpha()
-            self.alphaFloat = 255.0
-            self.isShowingText = True
-            self.hasDisplayedApproachingText = False
-            self.showingTextTime = pygame.time.get_ticks()
+        self.world_images[chunk_index] = surface
 
+    def _generate_world_image(self, season: str) -> None:
+        self.world_images.clear()
+        for chunk_index in self.world:
+            self._generate_chunk_image(chunk_index, season)
 
-        ################################################################### END CHANGE OF SEASON LOGIC ###################################################################
+    def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
+        cam_x, cam_y = camera_pos
+        TILE_W = 32 * SCALE
+        origin_x = TILE_W // 2 
 
+        sorted_chunks = sorted(self.world_images.items(), key=lambda kv: kv[0][0] + kv[0][1])
 
+        for (y0, x0), surface in sorted_chunks:
+            iso_x = (x0 - y0) * 16 - origin_x  
+            iso_y = (x0 + y0) * 8
+            screen.blit(surface, (iso_x - cam_x, iso_y - cam_y))
+    
+    
+    # -- Public Methods -- #
 
-        #update frame animation
-        if pygame.time.get_ticks() - self.surfaceUpdateTime > self.surfaceAnimationCooldown:
-            self.surfaceUpdateTime = pygame.time.get_ticks()
-            self.surfaceFrameIndex = (self.surfaceFrameIndex + 1) % len(self.surfaceList[self.surfaceSeasonIndex])
-            self.surface = self.surfaceList[self.surfaceSeasonIndex][self.surfaceFrameIndex]
-            self.treeSurface = self.treeList[self.surfaceSeasonIndex][0]
+    def add_chunk(self, pos: tuple[int, int], direction: str) -> None:
+        y, x = pos
+        index_x = (x // self.chunk_size) * self.chunk_size
+        index_y = (y // self.chunk_size) * self.chunk_size
 
-        
+        match direction.lower():
+            case "north": index_y -= self.chunk_size
+            case "south": index_y += self.chunk_size
+            case "east" : index_x += self.chunk_size
+            case "west" : index_x -= self.chunk_size
 
-        if self.isShowingText:
-            self.alphaFloat = self.alphaFloat - self.alphaStep
-            self.seasonText.set_alpha(max(0, int(self.alphaFloat)))
+        chunk_index = (index_y, index_x)
+        if chunk_index not in self.world:
+            self._generate_chunk(chunk_index)
 
-            if self.alphaFloat <= 0:
-                self.isShowingText = False
-                      
-    def draw(self, screen: pygame.Surface, horizontalOffset: int, verticalOffset: int) -> None:
-        screen.fill((0,0,0))
-        if self.surface is None:
-            return
-        
-        
-
-        self.updateSurfaceAnimation()   
-
-        #draws background terrain
-        screen.blit(self.surface, (((-1*self.width*16)+screenw/2) - horizontalOffset, -1*self.heigth*8 - verticalOffset))
-
-        #draws animals
-        self.handleAnimals(screen, ((-1*self.width*16)+screenw/2) - horizontalOffset, -1*self.heigth*8 - verticalOffset)
-
-        #draws tree 
-        screen.blit(self.treeSurface, (((-1*self.width*16)+screenw/2) - horizontalOffset, -1*self.heigth*8 - verticalOffset))
-        
-        
-        
-        if self.seasonText != None:
-            screen.blit(self.seasonText, (screenw / 2 - self.seasonText.width/2, screenh / 2) )
-
-    ################################################################### END SURFACE CREATION ###################################################################
-
-    ################################################################### ANIMAL HANDLING LOGIC ###################################################################
-
-    def handleAnimals(self, screen, hoffset, voffset):
-       
-        sortedAnimalList = sorted(self.animalList, key= lambda animal: animal.position[0])
-        self.animalList = sortedAnimalList
-        animal: Animal
-        for animal in self.animalList:
-            animal.update(screen, hoffset, voffset, self.deltaTime)
-
-            
-
-            
-
-
-
-    ################################################################### END ANIMAL HANDLING LOGIC###################################################################
-
-
-
-    ################################################################### UPDATE METHOD ###################################################################
-        
-    def update(self, screen: pygame.Surface):
-        self.dictConvertAlpha()
-        hoffset, voffset = 0, 0
-        #fill list
-
-        for _ in range(100):
-            self.animalList.append(Animal())
-
-        
-  
-
-        while self.isRunning:
-            
-
-            mousePos = pygame.mouse.get_pos()
-            self.deltaTime = self.clock.tick(60) / 1000
-            
-            hoffset, voffset = self.updateSurfacePosition(hoffset, voffset)
-            self.draw(screen, hoffset, voffset)
-            
-            
-            
-            if self.isShowingAerialView:
-                if self.checkAerialViewProcess():
-                    self.isShowingAerialView = False
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.isRunning = False
-                
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.isRunning = False
-                    if event.key == pygame.K_f and not self.isShowingAerialView:
-                        self.showAerialView()
-                    if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                        self.isMovingLeft = True
-                    if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                        self.isMovingRight = True
-                    if event.key == pygame.K_UP or event.key == pygame.K_w:
-                        self.isMovingUp = True
-                    if event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                        self.isMovingDown = True
-                    if event.key == pygame.K_LSHIFT:
-                        self.isFastMoving = True
-                
-                if event.type == pygame.KEYUP:
-                    if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                        self.isMovingLeft = False
-                    if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                        self.isMovingRight = False
-                    if event.key == pygame.K_UP or event.key == pygame.K_w:
-                        self.isMovingUp = False
-                    if event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                        self.isMovingDown = False
-                    if event.key == pygame.K_LSHIFT:
-                        self.isFastMoving = False
-
-
-
-
-
-            if self.inspectorWindow != None:
-                self.inspectorWindow.update(screen)
-
-            if pygame.mouse.get_pressed()[0]:
-                animal: Animal
-                for animal in self.animalList:
-                    animal.isClicked = animal.isBeingClicked(mousePos)
-                    if animal.isClicked:
-                        self.selectedAnimal = animal
-                        self.inspectorWindow = InspectorWindow(self.selectedAnimal)
-
-            if pygame.mouse.get_pressed()[2]: 
-                #reset visibility of inspector window if right click is selected
-                self.inspectorWindow.isShowing = False
-                self.selectedAnimal = None
-
-
-            #TODO pathing is fixed, now animals eat grass on water (probably a problem with masks)
-            try:
-                pass
-                print(self.selectedAnimal.isHungry, self.selectedAnimal.isThirsty, self.selectedAnimal.isWalkingHungerPath, self.selectedAnimal.isWalkingThirstPath, self.selectedAnimal.position)
-            except:
-                pass
-            
-            pygame.display.update()
-            
-
-
-    ################################################################### END UPDATE METHOD ###################################################################
-
-
-
-
+    
 
 if __name__ == "__main__":
     
-    def main():
-        screen = pygame.display.set_mode((screenw, screenh), pygame.SRCALPHA | pygame.DOUBLEBUF)
-        w = World(seed=69, createNewImages=True)
-        w.update(screen)
-    
-    main()
-    
-    
-    
-    
-    
+    screen = pygame.display.set_mode((SCREENW, SCREENH))
+    w = World()
 
+    camerax, cameray = 0, 0
+
+
+    is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
+
+    while True:
+        screen.fill((0, 0, 0))
+        w._draw(screen, (camerax, cameray))
+
+        if is_moving_left:
+            camerax -= 2
+        if is_moving_right:
+            camerax += 2
+        if is_moving_up:
+            cameray -= 2
+        if is_moving_down:
+            cameray += 2
+
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                break
+                
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_a:
+                    is_moving_left = True
+                elif event.key == pygame.K_d:
+                    is_moving_right = True                
+                if event.key == pygame.K_w:
+                    is_moving_up = True
+                elif event.key == pygame.K_s:
+                    is_moving_down = True
+
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_a:
+                    is_moving_left = False
+                elif event.key == pygame.K_d:
+                    is_moving_right = False                
+                if event.key == pygame.K_w:
+                    is_moving_up = False
+                elif event.key == pygame.K_s:
+                    is_moving_down = False
+
+
+        pygame.display.update()
 
 
 
