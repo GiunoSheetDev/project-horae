@@ -4,7 +4,9 @@ SCALE = 1
 GRIDW, GRIDH = 200, 200
 CHUNK_SIZE = 20
 
-CHUNK_IMAGE_SIZE = (32 * CHUNK_SIZE, 16 * CHUNK_SIZE + 32)
+CHUNK_IMAGE_WIDTH = 32 * CHUNK_SIZE
+CHUNK_IMAGE_HEIGHT = 16 * CHUNK_SIZE + 32
+CHUNK_IMAGE_SIZE = (CHUNK_IMAGE_WIDTH, CHUNK_IMAGE_HEIGHT)
 
 
 import os
@@ -26,6 +28,9 @@ ASSET_PATH_ANIMALS = os.path.join(
 )
 
 
+DRAWABLE_CHUNKS = [(-2, -2), (-2, -1), (-2, 0), (-2, 1), (-2, 2), (-2, 3), (-1, -2), (-1, -1), (-1, 0), (-1, 1), (-1, 2), (-1, 3), (0, -2), (0, -1), (0, 0), (0, 1), (0, 2), (0, 3), (1, -2), (1, -1), (1, 0), (1, 1), (1, 2), (1, 3), (2, -2), (2, -1), (2, 0), (2, 1), (2, 2), (2, 3), (3, -2), (3, -1), (3, 0), (3, 1), (3, 2), (3, 3)]
+
+
 from enum import Enum
 
 class Tile(Enum):
@@ -44,10 +49,6 @@ class Biome(Enum):
     OCEAN = 1
     FOREST = 2
     PLAIN = 3
-
-
-
-
 
 
 BIOME_SCALE = 0.012   # lower = bigger biome regions

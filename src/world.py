@@ -32,7 +32,8 @@ class World:
         self._load_assets()
 
         self.chunk_biomes : dict[tuple[int, int], Biome] = {}
-        self.world : dict[tuple[int, int], npt.NDArray] = {}
+        self.world_raw : dict[tuple[int, int], npt.NDArray] = {} #pre collapsed tile
+        self.world : dict[tuple[int, int], npt.NDArray] = {} #post collapsed tile
         self.world_images : dict[tuple[int, int], pygame.Surface] = {}
 
         self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
@@ -126,33 +127,27 @@ class World:
         self.world[chunk_index] = chunk
 
     def _collapse_water(self, chunk_index: tuple[int, int]) -> None:
-        """Classify raw WATER tiles into edge variants based on neighbors."""
-
+        '''Classify raw WATER tiles into edge variants based on neighbors.'''
         WATER_VAL = Tile.WATER.value
 
         def get_tile(y, x) -> int:
-            """Read a tile, looking into neighbor chunks if needed."""
             cy = (y0 + (y // self.chunk_size) * self.chunk_size
-                  if y >= self.chunk_size else
-                  y0 - self.chunk_size if y < 0 else y0)
+                if y >= self.chunk_size else
+                y0 - self.chunk_size if y < 0 else y0)
             cx = (x0 + (x // self.chunk_size) * self.chunk_size
-                  if x >= self.chunk_size else
-                  x0 - self.chunk_size if x < 0 else x0)
-
-            # clamp local coords
+                if x >= self.chunk_size else
+                x0 - self.chunk_size if x < 0 else x0)
             ly = y % self.chunk_size
             lx = x % self.chunk_size
-
             nidx = (cy, cx)
             if nidx in self.world:
                 t = int(self.world[nidx][ly, lx])
-                # treat specialized water variants as water for edge detection
                 if t in (Tile.WATER_EXT.value, Tile.WATER_INT.value,
-                         Tile.WATER_LEFT.value, Tile.WATER_RIGHT.value,
-                         Tile.WATER_MID.value):
+                        Tile.WATER_LEFT.value, Tile.WATER_RIGHT.value,
+                        Tile.WATER_MID.value):
                     return WATER_VAL
                 return t
-            return Tile.PLAIN.value  # default for missing chunks
+            return Tile.PLAIN.value
 
         y0, x0 = chunk_index
         chunk = self.world[chunk_index].copy()
@@ -162,29 +157,36 @@ class World:
                 if chunk[y, x] != WATER_VAL:
                     continue
 
-                n_above = get_tile(y - 1, x) == WATER_VAL  # row above
-                n_left  = get_tile(y, x - 1) == WATER_VAL  # col left
-                n_diag  = get_tile(y - 1, x - 1) == WATER_VAL  # diagonal
+                above = get_tile(y - 1, x) == WATER_VAL
+                left  = get_tile(y, x - 1) == WATER_VAL
+                diag  = get_tile(y - 1, x - 1) == WATER_VAL
 
-                if not n_above and not n_left:
-                    chunk[y, x] = Tile.WATER_INT.value
-                elif n_above and not n_left:
-                    chunk[y, x] = Tile.WATER_LEFT.value
-                elif not n_above and n_left:
-                    chunk[y, x] = Tile.WATER_RIGHT.value
-                elif n_diag and n_above and n_left:
-                    chunk[y, x] = Tile.WATER_MID.value
-                else:
-                    chunk[y, x] = Tile.WATER_EXT.value
+                if   not above and not left:             chunk[y, x] = Tile.WATER_INT.value
+                elif not above and     left:             chunk[y, x] = Tile.WATER_LEFT.value
+                elif     above and not left:             chunk[y, x] = Tile.WATER_RIGHT.value
+                elif not diag  and     above and left:   chunk[y, x] = Tile.WATER_EXT.value
+                else:                                    chunk[y, x] = Tile.WATER_MID.value
 
         self.world[chunk_index] = chunk
+
+    def _recollapse_neighbors(self, chunk_index: tuple[int, int]) -> None:
+        y0, x0 = chunk_index
+        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            neighbor = (y0 + dy * self.chunk_size, x0 + dx * self.chunk_size)
+            if neighbor in self.world:
+                # restore raw tiles before re-collapsing
+                self.world[neighbor] = self.world_raw[neighbor].copy()
+                self._collapse_water(neighbor)
+                self._generate_chunk_image(neighbor)
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
         self.world[chunk_index] = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
         self._assign_biome(chunk_index)
-        self._generate_tiles(chunk_index)   
+        self._generate_tiles(chunk_index)
+        self.world_raw[chunk_index] = self.world[chunk_index].copy()
         self._collapse_water(chunk_index)
         self._generate_chunk_image(chunk_index)
+        self._recollapse_neighbors(chunk_index)
         
     def _create_initial_world(self) -> None:
         for y in range(0, self.gridh, self.chunk_size):
@@ -233,18 +235,77 @@ class World:
         for chunk_index in self.world:
             self._generate_chunk_image(chunk_index, season)
 
+    def _get_drawable_chunks(self, chunk_index: tuple[int, int]) -> list:
+        out = []
+        y, x = chunk_index
+        for offset in DRAWABLE_CHUNKS:
+            dy, dx = offset
+            ny, nx = y + dy * CHUNK_SIZE, x + dx * CHUNK_SIZE
+
+            out.append((ny, nx))
+
+        return out
+
+    def _get_chunks_from_indices(self, chunk_indices: list[tuple[int, int]]) -> dict:
+        out = {}
+        for index in chunk_indices:
+            if index in self.world.keys():
+                out[index] = self.world_images[index]
+            else:
+                self._generate_chunk(index)
+                out[index] = self.world_images[index]
+        
+        return out
+
     def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
-        origin_x = TILE_W // 2 
+        TILE_H = 16 * SCALE
+        
+        half_w = TILE_W // 2
+        half_h = TILE_H // 2
 
-        sorted_chunks = sorted(self.world_images.items(), key=lambda kv: kv[0][0] + kv[0][1])
+        origin_x = half_w
+        origin_y = half_h
+
+        #get center chunk
+        screen_cx = SCREENW // 2
+        screen_cy = SCREENH // 2
+
+        world_x = screen_cx + cam_x + origin_x
+        world_y = screen_cy + cam_y + origin_y
+
+        tile_x = (world_x / half_w + world_y / half_h) / 2
+        tile_y = (world_y / half_h - world_x / half_w) / 2
+
+        tile_x -= CHUNK_SIZE / 2
+        tile_y -= CHUNK_SIZE / 2
+
+        tile_x = int(tile_x)
+        tile_y = int(tile_y)
+
+        chunk_x = (tile_x // CHUNK_SIZE) * CHUNK_SIZE
+        chunk_y = (tile_y // CHUNK_SIZE) * CHUNK_SIZE
+
+        selected_chunk = (chunk_y, chunk_x)
+
+        drawable_chunks = self._get_drawable_chunks(selected_chunk)
+        drawable_chunks = self._get_chunks_from_indices(drawable_chunks)
+
+        sorted_chunks = sorted(drawable_chunks.items(), key=lambda kv: kv[0][0] + kv[0][1])
+
+
+
 
         for (y0, x0), surface in sorted_chunks:
-            iso_x = (x0 - y0) * 16 - origin_x  
-            iso_y = (x0 + y0) * 8
-            screen.blit(surface, (iso_x - cam_x, iso_y - cam_y))
-    
+            iso_x = (x0 - y0) * half_w - origin_x
+            iso_y = (x0 + y0) * half_h
+
+            draw_x = iso_x - cam_x
+            draw_y = iso_y - cam_y
+
+            screen.blit(surface, (draw_x, draw_y))
+
     
     # -- Public Methods -- #
 
@@ -269,6 +330,7 @@ if __name__ == "__main__":
     
     screen = pygame.display.set_mode((SCREENW, SCREENH))
     w = World()
+    clock = pygame.time.Clock()
 
     camerax, cameray = 0, 0
 
@@ -276,8 +338,10 @@ if __name__ == "__main__":
     is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
 
     while True:
+        
         screen.fill((0, 0, 0))
         w._draw(screen, (camerax, cameray))
+        
 
         if is_moving_left:
             camerax -= 2
