@@ -46,16 +46,18 @@ class World:
         self.clock = pygame.time.Clock().tick(60)
 
         self.season = "summer"
-        self.next_season = "autumn"
-        self.season_alpha = 255
         self.season_update_time = pygame.time.get_ticks()
         self.season_cooldown = 5 * 60 * 1000 * 6
 
         self.is_day = True
         self.day_update_time = pygame.time.get_ticks()
         self.day_cooldown = 5 * 60 * 1000
-
         self.day_mask = pygame.Surface((SCREENW, SCREENH), pygame.SRCALPHA)
+
+        self.water_update_time = pygame.time.get_ticks()
+        self.water_cooldown = 250
+        self.water_frame = 0
+
 
         self._create_initial_world()
 
@@ -475,9 +477,9 @@ class World:
 
         origin_x = half_w
 
-        current_frame_index = 0
+        
         for (y0, x0), list_of_surfaces in sorted_chunks:
-            surface = list_of_surfaces[current_frame_index]
+            surface = list_of_surfaces[self.water_frame]
             iso_x = (x0 - y0) * half_w - origin_x
             iso_y = (x0 + y0) * half_h
 
@@ -543,6 +545,10 @@ class World:
                 case "winter":
                     self.season = "summer"
 
+    def _update_water_animation(self):
+        if pygame.time.get_ticks() - self.water_update_time >= self.water_cooldown:
+            self.water_update_time = pygame.time.get_ticks()
+            self.water_frame = (self.water_frame + 1) % 8
 
     # -- Public Methods -- #
 
@@ -564,7 +570,9 @@ class World:
     def update(self, screen, camera_pos):
         self._update_day()
         self._update_season()
+        self._update_water_animation()
         self._draw(screen, camera_pos)
+
 
 if __name__ == "__main__":
     
