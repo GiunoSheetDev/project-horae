@@ -1,7 +1,7 @@
 SCREENW, SCREENH = 1280, 720
 SCALE = 1
 
-GRIDW, GRIDH = 100, 100
+GRIDW, GRIDH = 200, 200
 CHUNK_SIZE = 20
 
 CHUNK_IMAGE_WIDTH = 32 * CHUNK_SIZE
@@ -53,9 +53,22 @@ class Biome(Enum):
     FOREST = 2
     PLAIN = 3
 
-
 BIOME_SCALE = 0.012   # lower = bigger biome regions
 TILE_SCALE  = 0.08    # lower = bigger tile blobs within a biome
+
+
+MASK_COLOR = [
+    (0.00,  (255, 244, 214, int(0.05 * 255))),  # day start
+    (0.20,  (255, 244, 214, int(0.05 * 255))),  # full day
+    (0.35,  (255, 163, 77,  int(0.25 * 255))),  # sunset
+    (0.50,  (123, 107, 168, int(0.40 * 255))),  # dusk
+    (0.60,  (11, 29, 58,    int(0.60 * 255))),   # night starts darker
+    (0.75,  (5, 11, 21,    int(0.70 * 255))),   # mid-night (darkest)
+    (0.85,  (16, 24, 32,    int(0.65 * 255))),   # late night / sunrise prep
+    (0.90,  (123, 107, 168, int(0.40 * 255))),   # early sunrise
+    (0.95,  (255, 163, 77,  int(0.25 * 255))),   # sunrise
+    (1.00,  (255, 244, 214, int(0.05 * 255))),   # back to day
+]
 
 
 TREE_PROBABILITY = 0.33

@@ -34,6 +34,7 @@ class World:
         self.world_raw : dict[tuple[int, int], npt.NDArray] = {} #pre collapsed tile
         self.world : dict[tuple[int, int], npt.NDArray] = {} #post collapsed tile
         self.world_images : dict[tuple[int, int], pygame.Surface] = {}
+        self.world_water : dict[tuple[int, int], list[pygame.Surface]] = {} 
         self.world_trees_probs : dict[tuple[int, int], npt.NDArray] = {} #probability for deterministic tree collapsing
         self.world_trees_types : dict[tuple[int, int], npt.NDArray] = {}
         self.world_trees_images : dict[tuple[int, int], pygame.Surface] = {}
@@ -41,7 +42,18 @@ class World:
         self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
         self.tile_offset = (self.seed * 0.003, self.seed * 0.007)
 
+
+        self.clock = pygame.time.Clock().tick(60)
+
         self.season = "summer"
+        self.season_update_time = pygame.time.get_ticks()
+        self.season_cooldown = 5 * 60 * 1000 * 6
+
+        self.is_day = True
+        self.day_update_time = pygame.time.get_ticks()
+        self.day_cooldown = 5 * 60 * 1000
+
+        self.day_mask = pygame.Surface((SCREENW, SCREENH), pygame.SRCALPHA)
 
         self._create_initial_world()
 
@@ -203,6 +215,61 @@ class World:
     
     # --  Rendering -- #
 
+    def _generate_chunk_water_image(self, chunk_index: tuple[int, int]) -> None:
+        chunk = self.world[chunk_index]
+
+        TILE_W = 32 * SCALE
+        TILE_H = 32 * SCALE  
+        TREE_OVERHEAD = 96
+
+        surf_w = 32 * self.chunk_size + TILE_W
+        surf_h = 16 * self.chunk_size + TILE_H + 32 + TREE_OVERHEAD
+        origin_x = TILE_W // 2
+        out = []
+
+        for i in range(8):
+            surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+            out.append(surface)
+
+        for y in range(self.chunk_size):
+            for x in range(self.chunk_size):
+                tile = Tile(chunk[y, x])
+                img = None
+
+                blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
+                blit_y = x * 8 + y * 8 + TREE_OVERHEAD
+
+                match tile:
+                    case Tile.WATER_EXT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_EXT_{i}"]
+                            out[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_INT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_INT_{i}"]
+                            out[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_LEFT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_LEFT_{i}"]
+                            out[i].blit(img, (blit_x, blit_y))
+                    
+                    case Tile.WATER_RIGHT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_RIGHT_{i}"]
+                            out[i].blit(img, (blit_x, blit_y))
+                        
+                    case Tile.WATER_MID:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_MID_{i}"]
+                            out[i].blit(img, (blit_x, blit_y))
+
+                    case _:
+                        continue
+
+        self.world_water[chunk_index] = out
+        
     def _generate_chunk_image(self, chunk_index: tuple[int, int], season:str) -> None:
         chunk = self.world[chunk_index]
         season = season.lower()
@@ -231,20 +298,8 @@ class World:
                         tree_prob = self.world_trees_probs[chunk_index][y, x]
                         if tree_prob <= TREE_PROBABILITY:
                             tree_img = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_{season}"]
-                    case Tile.WATER:        
-                        img = self.background_assets["WATER_MID_0"]
-                    case Tile.WATER_EXT:    
-                        img = self.background_assets["WATER_EXT_0"]
-                    case Tile.WATER_INT:    
-                        img = self.background_assets["WATER_INT_0"]
-                    case Tile.WATER_LEFT:   
-                        img = self.background_assets["WATER_LEFT_0"]
-                    case Tile.WATER_RIGHT:  
-                        img = self.background_assets["WATER_RIGHT_0"]
-                    case Tile.WATER_MID:    
-                        img = self.background_assets["WATER_MID_0"]
                     case _:                 
-                        img = self.background_assets["rock"]
+                        continue
 
                 blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
                 blit_y = x * 8 + y * 8 + TREE_OVERHEAD
@@ -264,6 +319,7 @@ class World:
 
         self.world_images[chunk_index] = surface
         self.world_trees_images[chunk_index] = tree_surface
+        self._generate_chunk_water_image(chunk_index)
 
     def _generate_world_image(self, season: str) -> None:
         self.world_images.clear()
@@ -328,7 +384,9 @@ class World:
 
     def _draw_background_layer(self, screen, camera_pos, drawable_chunks_indices) -> None:
         drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices, self.world_images)
+        
         sorted_chunks = sorted(drawable_chunks.items(), key=lambda kv: kv[0][0] + kv[0][1])
+        
 
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
@@ -371,17 +429,80 @@ class World:
 
             screen.blit(surface, (draw_x, draw_y))
 
+    def _draw_water_layer(self, screen, camera_pos, drawable_chunks_indices) -> None:
+        drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices, self.world_water)
+        sorted_chunks = sorted(drawable_chunks.items(), key=lambda kv: kv[0][0] + kv[0][1])
+        cam_x, cam_y = camera_pos
+        TILE_W = 32 * SCALE
+        TILE_H = 16 * SCALE
+        
+        half_w = TILE_W // 2
+        half_h = TILE_H // 2
+
+        origin_x = half_w
+
+        current_frame_index = 0
+        for (y0, x0), list_of_surfaces in sorted_chunks:
+            surface = list_of_surfaces[current_frame_index]
+            iso_x = (x0 - y0) * half_w - origin_x
+            iso_y = (x0 + y0) * half_h
+
+            draw_x = iso_x - cam_x
+            draw_y = iso_y - cam_y
+
+            screen.blit(surface, (draw_x, draw_y))
+
     def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
         selected_chunk = self._get_chunk_from_camera_pos(camera_pos)
         drawable_chunks_indices = self._get_drawable_chunks(selected_chunk)
 
         self._draw_background_layer(screen, camera_pos, drawable_chunks_indices)
-
+        self._draw_water_layer(screen, camera_pos, drawable_chunks_indices)
         #here in the middle draw the animals so the z layer is behind tree but on top of background
 
         self._draw_tree_layer(screen, camera_pos, drawable_chunks_indices)
 
+
+        
+        screen.blit(self.day_mask, (0,0))
+
     
+    # -- Update -- #
+
+    def _get_mask_color(self, percent: float) -> tuple[int,int,int,int]:
+        '''
+        Returns the interpolated RGBA color for a given percentage of the day.
+        '''
+        percent = percent % 1.0
+
+        
+        for i in range(len(MASK_COLOR) - 1):
+            start_time, start_color = MASK_COLOR[i]
+            end_time,   end_color   = MASK_COLOR[i + 1]
+
+            if start_time <= percent <= end_time:
+                t = (percent - start_time) / (end_time - start_time)
+                
+                r = int(start_color[0] + (end_color[0] - start_color[0]) * t)
+                g = int(start_color[1] + (end_color[1] - start_color[1]) * t)
+                b = int(start_color[2] + (end_color[2] - start_color[2]) * t)
+                a = int(start_color[3] + (end_color[3] - start_color[3]) * t)
+                
+                return (r, g, b, a)
+        
+        return MASK_COLOR[-1][1]
+
+
+    def _update_day(self):
+        current_time = pygame.time.get_ticks()
+        percentage = current_time / self.day_cooldown
+        color = self._get_mask_color(percentage)
+        self.day_mask.fill(color)
+
+        print(f"{percentage:.2g}", color)
+
+
+
     # -- Public Methods -- #
 
     def add_chunk(self, pos: tuple[int, int], direction: str) -> None:
@@ -399,7 +520,9 @@ class World:
         if chunk_index not in self.world:
             self._generate_chunk(chunk_index)
 
-    
+    def update(self, screen, camera_pos):
+        self._update_day()
+        self._draw(screen, camera_pos)
 
 if __name__ == "__main__":
     
@@ -415,10 +538,10 @@ if __name__ == "__main__":
     is_running = True
 
     while is_running:
-        
+        #clock.tick(60)
         
         screen.fill((0, 0, 0))
-        w._draw(screen, (camerax, cameray))
+        w.update(screen, (camerax, cameray))
         
 
         if is_moving_left:
