@@ -46,6 +46,8 @@ class World:
         self.clock = pygame.time.Clock().tick(60)
 
         self.season = "summer"
+        self.next_season = "autumn"
+        self.season_alpha = 255
         self.season_update_time = pygame.time.get_ticks()
         self.season_cooldown = 5 * 60 * 1000 * 6
 
@@ -195,7 +197,7 @@ class World:
                 # restore raw tiles before re-collapsing
                 self.world[neighbor] = self.world_raw[neighbor].copy()
                 self._collapse_water(neighbor)
-                self._generate_chunk_image(neighbor, self.season)
+                self._generate_chunk_image(neighbor)
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
         self.world[chunk_index] = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
@@ -204,7 +206,12 @@ class World:
         self._generate_tiles(chunk_index)
         self.world_raw[chunk_index] = self.world[chunk_index].copy()
         self._collapse_water(chunk_index)
-        self._generate_chunk_image(chunk_index, self.season)
+
+        self.world_images[chunk_index] = {}
+        self.world_trees_images[chunk_index] = {}
+
+
+        self._generate_chunk_image(chunk_index)
         self._recollapse_neighbors(chunk_index)
         
     def _create_initial_world(self) -> None:
@@ -270,43 +277,59 @@ class World:
 
         self.world_water[chunk_index] = out
         
-    def _generate_chunk_image(self, chunk_index: tuple[int, int], season:str) -> None:
+    def _generate_chunk_image(self, chunk_index: tuple[int, int]) -> None:
         chunk = self.world[chunk_index]
-        season = season.lower()
-
         TILE_W = 32 * SCALE
         TILE_H = 32 * SCALE  
         TREE_OVERHEAD = 96
 
         surf_w = 32 * self.chunk_size + TILE_W
         surf_h = 16 * self.chunk_size + TILE_H + 32 + TREE_OVERHEAD
-        surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-        tree_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+
+
+        summer_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        autumn_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        winter_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        tree_surface_summer = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        tree_surface_autumn = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        tree_surface_winter = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
 
         origin_x = TILE_W // 2
 
         for y in range(self.chunk_size):
             for x in range(self.chunk_size):
                 tile = Tile(chunk[y, x])
-                tree_img = None
+                tree_img_summer = None
+                tree_img_autumn = None
+                tree_img_winter = None
 
                 match tile:
                     case Tile.PLAIN:        
-                        img = self.background_assets[f"PLAIN_{season.upper()}"]
+                        img_summer = self.background_assets[f"PLAIN_SUMMER"]
+                        img_autumn = self.background_assets[f"PLAIN_AUTUMN"]
+                        img_winter = self.background_assets[f"PLAIN_WINTER"]
                     case Tile.FOREST:       
-                        img = self.background_assets[f"PLAIN_{season.upper()}"]
+                        img_summer = self.background_assets[f"PLAIN_SUMMER"]
+                        img_autumn = self.background_assets[f"PLAIN_AUTUMN"]
+                        img_winter = self.background_assets[f"PLAIN_WINTER"]
                         tree_prob = self.world_trees_probs[chunk_index][y, x]
                         if tree_prob <= TREE_PROBABILITY:
-                            tree_img = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_{season}"]
+                            tree_img_summer = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_summer"]
+                            tree_img_autumn = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_autumn"]
+                            tree_img_winter = self.background_assets[f"tree_{self.world_trees_types[chunk_index][y, x]}_winter"]
                     case _:                 
                         continue
 
                 blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
                 blit_y = x * 8 + y * 8 + TREE_OVERHEAD
-                surface.blit(img, (blit_x, blit_y))
+                summer_surface.blit(img_summer, (blit_x, blit_y))
+                autumn_surface.blit(img_autumn, (blit_x, blit_y))
+                winter_surface.blit(img_winter, (blit_x, blit_y))
+                
+                
 
-                if tree_img is not None:
-                    anchor_x, anchor_y = TREE_ANCHORS.get(self.world_trees_types[chunk_index][y, x], (tree_img.get_width() // 2, tree_img.get_height()))
+                if tree_img_summer is not None:
+                    anchor_x, anchor_y = TREE_ANCHORS.get(self.world_trees_types[chunk_index][y, x], (tree_img_summer.get_width() // 2, tree_img_summer.get_height()))
 
                     tile_center_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16 + 16
                     tile_base_y   = x * 8 + y * 8 + 16 * SCALE + TREE_OVERHEAD
@@ -314,11 +337,20 @@ class World:
                     tree_blit_x = tile_center_x - anchor_x
                     tree_blit_y = tile_base_y - anchor_y
 
-                    tree_surface.blit(tree_img, (tree_blit_x, tree_blit_y))
+                    tree_surface_summer.blit(tree_img_summer, (tree_blit_x, tree_blit_y))
+                    tree_surface_autumn.blit(tree_img_autumn, (tree_blit_x, tree_blit_y))
+                    tree_surface_winter.blit(tree_img_winter, (tree_blit_x, tree_blit_y))
+                    
 
 
-        self.world_images[chunk_index] = surface
-        self.world_trees_images[chunk_index] = tree_surface
+        self.world_images[chunk_index]["summer"] = summer_surface
+        self.world_images[chunk_index]["autumn"] = autumn_surface
+        self.world_images[chunk_index]["winter"] = winter_surface
+
+        self.world_trees_images[chunk_index]["summer"] = tree_surface_summer
+        self.world_trees_images[chunk_index]["autumn"] = tree_surface_autumn
+        self.world_trees_images[chunk_index]["winter"] = tree_surface_winter
+
         self._generate_chunk_water_image(chunk_index)
 
     def _generate_world_image(self, season: str) -> None:
@@ -398,7 +430,8 @@ class World:
         origin_x = half_w
 
 
-        for (y0, x0), surface in sorted_chunks:
+        for (y0, x0), surface_dict in sorted_chunks:
+            surface = surface_dict[self.season]
             iso_x = (x0 - y0) * half_w - origin_x
             iso_y = (x0 + y0) * half_h
 
@@ -420,7 +453,8 @@ class World:
         origin_x = half_w
 
 
-        for (y0, x0), surface in sorted_chunks:
+        for (y0, x0), surface_dict in sorted_chunks:
+            surface = surface_dict[self.season]
             iso_x = (x0 - y0) * half_w - origin_x
             iso_y = (x0 + y0) * half_h
 
@@ -492,15 +526,22 @@ class World:
         
         return MASK_COLOR[-1][1]
 
-
     def _update_day(self):
         current_time = pygame.time.get_ticks()
         percentage = current_time / self.day_cooldown
         color = self._get_mask_color(percentage)
         self.day_mask.fill(color)
 
-        print(f"{percentage:.2g}", color)
-
+    def _update_season(self):
+        if pygame.time.get_ticks() - self.season_update_time >= self.season_cooldown:
+            self.season_update_time = pygame.time.get_ticks()
+            match self.season:
+                case "summer":
+                    self.season = "autumn"
+                case "autumn":
+                    self.season = "winter"
+                case "winter":
+                    self.season = "summer"
 
 
     # -- Public Methods -- #
@@ -522,6 +563,7 @@ class World:
 
     def update(self, screen, camera_pos):
         self._update_day()
+        self._update_season()
         self._draw(screen, camera_pos)
 
 if __name__ == "__main__":
