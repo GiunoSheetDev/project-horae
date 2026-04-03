@@ -62,7 +62,7 @@ class World:
     def _build_neighbor_dict(self, chunk_index: tuple[int, int]) -> dict[tuple[int, int], Chunk]:
         y0, x0 = chunk_index
         neighbors = {}
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+        for dy, dx in [(-1, -1), (-1, 1), (1, -1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)]:
             nidx = (y0 + dy * self.chunk_size, x0 + dx * self.chunk_size)
             if nidx in self.chunks:
                 neighbors[nidx] = self.chunks[nidx]
@@ -70,7 +70,7 @@ class World:
 
     def _recollapse_neighbors(self, chunk_index: tuple[int, int]) -> None:
         y0, x0 = chunk_index
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+        for dy, dx in [(-1, -1), (-1, 1), (1, -1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)]:
             neighbor_index = (y0 + dy * self.chunk_size, x0 + dx * self.chunk_size)
             if neighbor_index in self.chunks:
                 neighbor = self.chunks[neighbor_index]
@@ -191,12 +191,14 @@ class World:
         drawable_chunks_indices = self._get_drawable_chunks(selected_chunk)
         drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices)
 
-        self._draw_background_layer(screen, camera_pos, drawable_chunks)
+
         self._draw_water_layer(screen, camera_pos, drawable_chunks)
+        self._draw_background_layer(screen, camera_pos, drawable_chunks)
+        
         #here in the middle draw the animals so the z layer is behind tree but on top of background
 
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)
-
+    
         screen.blit(self.day_mask, (0,0))
 
     
