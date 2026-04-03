@@ -36,11 +36,11 @@ class World:
 
         self.season = "summer"
         self.season_update_time = pygame.time.get_ticks()
-        self.season_cooldown = 1 * 60 * 1000#5 * 60 * 1000 * 6
+        self.season_cooldown = 5 * 60 * 1000 * 6
 
         self.is_day = True
         self.day_update_time = pygame.time.get_ticks()
-        self.day_cooldown = 0.5 * 60 * 1000
+        self.day_cooldown = 5 * 60 * 1000
         self.day_mask = pygame.Surface((SCREENW, SCREENH), pygame.SRCALPHA)
 
         self.water_update_time = pygame.time.get_ticks()
@@ -76,8 +76,8 @@ class World:
                 neighbor = self.chunks[neighbor_index]
                 # restore raw tiles before re-collapsing
                 neighbor.chunk = neighbor.chunk_raw.copy()
-                neighbor._collapse_water(self._build_neighbor_dict(neighbor_index))
-                neighbor._generate_chunk_image()
+                neighbor._collapse_water(self._build_neighbor_dict(neighbor_index), is_recollapse=True)
+                neighbor._generate_chunk_image(is_recollapse=True)
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
         chunk = Chunk(chunk_index, self.seed, self.background_assets)
@@ -92,17 +92,25 @@ class World:
         self._recollapse_neighbors(chunk_index)
         
     def _create_initial_world(self) -> None:
-        for y in range(0, self.gridh, self.chunk_size):
-            for x in range(0, self.gridw, self.chunk_size):
-                self._generate_chunk((y, x))
+        chunk_indices = sorted(
+            [(y, x) for y in range(0, self.gridh, self.chunk_size)
+                    for x in range(0, self.gridw, self.chunk_size)]
+        )
 
-        # second pass: recollapse all chunks now that every neighbor exists
-        for chunk_index in self.chunks:
+        # Create all chunks 
+        for chunk_index in chunk_indices:
+            self.chunks[chunk_index] = Chunk(chunk_index, self.seed, self.background_assets)
+
+        # Collapse water with full neighbor awareness
+        for chunk_index in chunk_indices:
             chunk = self.chunks[chunk_index]
             chunk.chunk = chunk.chunk_raw.copy()
             chunk._collapse_water(self._build_neighbor_dict(chunk_index))
-            chunk._generate_chunk_image()
 
+        # Generate images
+        for chunk_index in chunk_indices:
+            chunk = self.chunks[chunk_index]
+            chunk._generate_chunk_image(is_recollapse=False)
 
     # -- Rendering -- #
 
