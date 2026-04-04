@@ -3,7 +3,7 @@ import numpy as np
 import numpy.typing as npt
 import random
 
-from noise import pnoise2
+
 
 from config import *
 from chunk import Chunk
@@ -36,11 +36,11 @@ class World:
 
         self.season = "summer"
         self.season_update_time = pygame.time.get_ticks()
-        self.season_cooldown = 1 * 60 * 1000#5 * 60 * 1000 * 6
+        self.season_cooldown = 5 * 60 * 1000 * 6
 
         self.is_day = True
         self.day_update_time = pygame.time.get_ticks()
-        self.day_cooldown = 0.5 * 60 * 1000
+        self.day_cooldown = 5 * 60 * 1000
         self.day_mask = pygame.Surface((SCREENW, SCREENH), pygame.SRCALPHA)
 
         self.water_update_time = pygame.time.get_ticks()
@@ -164,7 +164,7 @@ class World:
         sorted_chunks = sorted(drawable_chunks, key=lambda c: c.index[0] + c.index[1])
 
         for chunk in sorted_chunks:
-            chunk._draw_background_layer(screen, camera_pos, self.season)
+            chunk._draw_background_layer(screen, camera_pos, self.season, self.water_frame)
 
     def _draw_tree_layer(self, screen, camera_pos, drawable_chunks) -> None:
         sorted_chunks = sorted(drawable_chunks, key=lambda c: c.index[0] + c.index[1])
@@ -172,11 +172,6 @@ class World:
         for chunk in sorted_chunks:
             chunk._draw_tree_layer(screen, camera_pos, self.season)
 
-    def _draw_water_layer(self, screen, camera_pos, drawable_chunks) -> None:
-        sorted_chunks = sorted(drawable_chunks, key=lambda c: c.index[0] + c.index[1])
-
-        for chunk in sorted_chunks:
-            chunk._draw_water_layer(screen, camera_pos, self.water_frame)
 
     def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
         selected_chunk = self._get_chunk_from_camera_pos(camera_pos)
@@ -184,7 +179,6 @@ class World:
         drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices)
 
         self._draw_background_layer(screen, camera_pos, drawable_chunks)
-        self._draw_water_layer(screen, camera_pos, drawable_chunks)
         #here in the middle draw the animals so the z layer is behind tree but on top of background
 
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)

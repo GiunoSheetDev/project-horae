@@ -21,8 +21,7 @@ class Chunk:
         self.tree_types : npt.NDArray = np.random.randint(0, 10, (self.chunk_size, self.chunk_size))
 
         # -- Pygame Surfaces -- #
-        self.image : dict = {"summer" : None, "autumn" : None, "winter" : None}
-        self.water : list[pygame.Surface] = []
+        self.image : dict = {"summer" : [], "autumn" : [], "winter" : []}
         self.tree  : dict = {"summer" : None, "autumn" : None, "winter" : None}
 
         self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
@@ -169,111 +168,92 @@ class Chunk:
 
     # -- Surfaces Generation -- #
 
-    def _generate_chunk_water_image(self) -> None:
-        chunk = self.chunk
-
-        TILE_W = 32 * SCALE
-        TILE_H = 32 * SCALE  
-        TREE_OVERHEAD = 96
-
-        surf_w = 32 * self.chunk_size + TILE_W
-        surf_h = 16 * self.chunk_size + TILE_H + 32 + TREE_OVERHEAD
-        origin_x = TILE_W // 2
-        out = []
-
-        for i in range(8):
-            surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-            out.append(surface)
-
-        for y in range(self.chunk_size):
-            for x in range(self.chunk_size):
-                tile = Tile(chunk[y, x])
-                img = None
-
-                blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
-                blit_y = x * 8 + y * 8 + TREE_OVERHEAD
-
-                match tile:
-                    case Tile.WATER_EXT:
-                        for i in range(8):
-                            img = self.background_assets[f"WATER_EXT_{i}"]
-                            out[i].blit(img, (blit_x, blit_y))
-
-                    case Tile.WATER_INT:
-                        for i in range(8):
-                            img = self.background_assets[f"WATER_INT_{i}"]
-                            out[i].blit(img, (blit_x, blit_y))
-
-                    case Tile.WATER_LEFT:
-                        for i in range(8):
-                            img = self.background_assets[f"WATER_LEFT_{i}"]
-                            out[i].blit(img, (blit_x, blit_y))
-                    
-                    case Tile.WATER_RIGHT:
-                        for i in range(8):
-                            img = self.background_assets[f"WATER_RIGHT_{i}"]
-                            out[i].blit(img, (blit_x, blit_y))
-                        
-                    case Tile.WATER_MID:
-                        for i in range(8):
-                            img = self.background_assets[f"WATER_MID_{i}"]
-                            out[i].blit(img, (blit_x, blit_y))
-
-                    case _:
-                        continue
-
-        self.water = out
-
     def _generate_chunk_image(self) -> None:
         chunk = self.chunk
         TILE_W = 32 * SCALE
-        TILE_H = 32 * SCALE  
+        TILE_H = 32 * SCALE
         TREE_OVERHEAD = 96
 
         surf_w = 32 * self.chunk_size + TILE_W
-        surf_h = 16 * self.chunk_size + TILE_H + 32 + TREE_OVERHEAD
+        surf_h = 16 * self.chunk_size + 32 + TREE_OVERHEAD
+
+        origin_x = TILE_W // 2
 
 
-        summer_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-        autumn_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-        winter_surface = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+        out_summer = [pygame.Surface((surf_w, surf_h), pygame.SRCALPHA) for _ in range(8)]
+        out_autumn = [pygame.Surface((surf_w, surf_h), pygame.SRCALPHA) for _ in range(8)]
+        out_winter = [pygame.Surface((surf_w, surf_h), pygame.SRCALPHA) for _ in range(8)]
+
         tree_surface_summer = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
         tree_surface_autumn = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
         tree_surface_winter = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
 
-        origin_x = TILE_W // 2
-
         for y in range(self.chunk_size):
             for x in range(self.chunk_size):
                 tile = Tile(chunk[y, x])
-                tree_img_summer = None
-                tree_img_autumn = None
-                tree_img_winter = None
+                img_summer, img_autumn, img_winter = None, None, None
+                tree_img_summer, tree_img_autumn, tree_img_winter = None, None, None
+
+                blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
+                blit_y = x * 8 + y * 8 + TREE_OVERHEAD
 
                 match tile:
                     case Tile.PLAIN:        
                         img_summer = self.background_assets[f"PLAIN_SUMMER"]
                         img_autumn = self.background_assets[f"PLAIN_AUTUMN"]
                         img_winter = self.background_assets[f"PLAIN_WINTER"]
+                    
                     case Tile.FOREST:       
                         img_summer = self.background_assets[f"PLAIN_SUMMER"]
                         img_autumn = self.background_assets[f"PLAIN_AUTUMN"]
                         img_winter = self.background_assets[f"PLAIN_WINTER"]
                         tree_prob = self.tree_probs[y, x]
                         if tree_prob <= TREE_PROBABILITY:
+                            #img_summer = self.background_assets[f"PLAIN_SUMMER_DEBUG"]
                             tree_img_summer = self.background_assets[f"tree_{self.tree_types[y, x]}_summer"]
                             tree_img_autumn = self.background_assets[f"tree_{self.tree_types[y, x]}_autumn"]
                             tree_img_winter = self.background_assets[f"tree_{self.tree_types[y, x]}_winter"]
-                    case _:                 
-                        continue
 
-                blit_x = origin_x + (32 * self.chunk_size) // 2 + x * 16 - y * 16
-                blit_y = x * 8 + y * 8 + TREE_OVERHEAD
-                summer_surface.blit(img_summer, (blit_x, blit_y))
-                autumn_surface.blit(img_autumn, (blit_x, blit_y))
-                winter_surface.blit(img_winter, (blit_x, blit_y))
-                
-                
+                    case Tile.WATER_EXT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_EXT_{i}"]
+                            out_summer[i].blit(img, (blit_x, blit_y))
+                            out_autumn[i].blit(img, (blit_x, blit_y))
+                            out_winter[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_INT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_INT_{i}"]
+                            out_summer[i].blit(img, (blit_x, blit_y))
+                            out_autumn[i].blit(img, (blit_x, blit_y))
+                            out_winter[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_LEFT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_LEFT_{i}"]
+                            out_summer[i].blit(img, (blit_x, blit_y))
+                            out_autumn[i].blit(img, (blit_x, blit_y))
+                            out_winter[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_RIGHT:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_RIGHT_{i}"]
+                            out_summer[i].blit(img, (blit_x, blit_y))
+                            out_autumn[i].blit(img, (blit_x, blit_y))
+                            out_winter[i].blit(img, (blit_x, blit_y))
+
+                    case Tile.WATER_MID:
+                        for i in range(8):
+                            img = self.background_assets[f"WATER_MID_{i}"]
+                            out_summer[i].blit(img, (blit_x, blit_y))
+                            out_autumn[i].blit(img, (blit_x, blit_y))
+                            out_winter[i].blit(img, (blit_x, blit_y))
+
+                if img_summer is not None:
+                    for i in range(8):
+                        out_summer[i].blit(img_summer, (blit_x, blit_y))
+                        out_autumn[i].blit(img_autumn, (blit_x, blit_y))
+                        out_winter[i].blit(img_winter, (blit_x, blit_y))
 
                 if tree_img_summer is not None:
                     anchor_x, anchor_y = TREE_ANCHORS.get(self.tree_types[y, x], (tree_img_summer.get_width() // 2, tree_img_summer.get_height()))
@@ -287,23 +267,19 @@ class Chunk:
                     tree_surface_summer.blit(tree_img_summer, (tree_blit_x, tree_blit_y))
                     tree_surface_autumn.blit(tree_img_autumn, (tree_blit_x, tree_blit_y))
                     tree_surface_winter.blit(tree_img_winter, (tree_blit_x, tree_blit_y))
-                    
 
-
-        self.image["summer"] = summer_surface
-        self.image["autumn"] = autumn_surface
-        self.image["winter"] = winter_surface
+        self.image["summer"] = out_summer
+        self.image["autumn"] = out_autumn
+        self.image["winter"] = out_winter
 
         self.tree["summer"] = tree_surface_summer
         self.tree["autumn"] = tree_surface_autumn
         self.tree["winter"] = tree_surface_winter
 
-        self._generate_chunk_water_image()
-
 
     # -- Rendering -- #
 
-    def _draw_background_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str) -> None: 
+    def _draw_background_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str, water_frame: int) -> None: 
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
         TILE_H = 16 * SCALE
@@ -315,7 +291,7 @@ class Chunk:
 
         y0, x0 = self.index
 
-        surface = self.image[season]
+        surface = self.image[season][water_frame]
         iso_x = (x0 - y0) * half_w - origin_x
         iso_y = (x0 + y0) * half_h
 
@@ -347,31 +323,11 @@ class Chunk:
 
         screen.blit(surface, (draw_x, draw_y))
 
-    def _draw_water_layer(self, screen: pygame.Surface, camera_pos: tuple[int, int], frame: int) -> None:
-        cam_x, cam_y = camera_pos
-        TILE_W = 32 * SCALE
-        TILE_H = 16 * SCALE
-        
-        half_w = TILE_W // 2
-        half_h = TILE_H // 2
-
-        origin_x = half_w
-
-        y0, x0 = self.index
-
-        
-        surface = self.water[frame]
-        iso_x = (x0 - y0) * half_w - origin_x
-        iso_y = (x0 + y0) * half_h
-
-        draw_x = iso_x - cam_x
-        draw_y = iso_y - cam_y
-
-        screen.blit(surface, (draw_x, draw_y))
 
     def _draw(self, screen: pygame.Surface, camera_pos : tuple[int, int], season: str, frame : int) -> None:
-        self._draw_background_layer(screen, camera_pos, season)
         self._draw_water_layer(screen, camera_pos, frame)
+        self._draw_background_layer(screen, camera_pos, season)
+        
 
         #FIXME here should be drawn the animals for z indexing
 
