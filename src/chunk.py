@@ -129,7 +129,7 @@ class Chunk:
             if nidx == (y0, x0):
                 t = int(self.chunk[ly, lx])
             elif nidx in neighbor_chunks:
-                t = int(neighbor_chunks[nidx].chunk[ly, lx])
+                t = int(neighbor_chunks[nidx].chunk_raw[ly, lx])
             else:
                 return Tile.PLAIN.value
 
@@ -139,7 +139,7 @@ class Chunk:
                 return WATER_VAL
             return t
 
-        chunk = self.chunk.copy()
+        chunk = self.chunk
 
         for y in range(self.chunk_size):
             for x in range(self.chunk_size):

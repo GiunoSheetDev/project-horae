@@ -64,22 +64,22 @@ class World:
     def _build_neighbor_dict(self, chunk_index: tuple[int, int]) -> dict[tuple[int, int], Chunk]:
         y0, x0 = chunk_index
         neighbors = {}
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            nidx = (y0 + dy * self.chunk_size, x0 + dx * self.chunk_size)
-            if nidx in self.chunks:
-                neighbors[nidx] = self.chunks[nidx]
-        return neighbors
 
-    def _recollapse_neighbors(self, chunk_index: tuple[int, int]) -> None:
-        y0, x0 = chunk_index
-        for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
-            neighbor_index = (y0 + dy * self.chunk_size, x0 + dx * self.chunk_size)
-            if neighbor_index in self.chunks:
-                neighbor = self.chunks[neighbor_index]
-                # restore raw tiles before re-collapsing
-                neighbor.chunk = neighbor.chunk_raw.copy()
-                neighbor._collapse_water(self._build_neighbor_dict(neighbor_index))
-                neighbor._generate_chunk_image()
+        for dy, dx in [
+            (-1, 0), (1, 0), (0, -1), (0, 1),(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            nidx = (y0 + dy * self.chunk_size,
+                    x0 + dx * self.chunk_size)
+
+            
+            if nidx not in self.chunks:
+                chunk = Chunk(nidx, self.seed, self.background_assets)
+                self.chunks[nidx] = chunk
+
+                # Only generate raw here — DO NOT collapse yet
+
+            neighbors[nidx] = self.chunks[nidx]
+
+        return neighbors
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
         chunk = Chunk(chunk_index, self.seed, self.background_assets)
@@ -90,20 +90,13 @@ class World:
         chunk._collapse_water(self._build_neighbor_dict(chunk_index))
         chunk._generate_chunk_image()
 
-        # neighbors must recollapse now they have a new chunk on their border
-        self._recollapse_neighbors(chunk_index)
         
     def _create_initial_world(self) -> None:
         for y in range(0, self.gridh, self.chunk_size):
             for x in range(0, self.gridw, self.chunk_size):
                 self._generate_chunk((y, x))
 
-        # second pass: recollapse all chunks now that every neighbor exists
-        for chunk_index in self.chunks:
-            chunk = self.chunks[chunk_index]
-            chunk.chunk = chunk.chunk_raw.copy()
-            chunk._collapse_water(self._build_neighbor_dict(chunk_index))
-            chunk._generate_chunk_image()
+        
 
 
     # -- Rendering -- #
@@ -120,10 +113,20 @@ class World:
 
     def _get_chunks_from_indices(self, chunk_indices: list[tuple[int, int]]) -> list[Chunk]:
         out = []
+
         for index in chunk_indices:
             if index not in self.chunks:
                 self._generate_chunk(index)
-            out.append(self.chunks[index])
+
+            chunk = self.chunks[index]
+
+            if not chunk.image["summer"]:  
+                chunk.chunk = chunk.chunk_raw.copy()
+                chunk._collapse_water(self._build_neighbor_dict(index))
+                chunk._generate_chunk_image()
+
+            out.append(chunk)
+
         return out
 
     def _get_chunk_from_camera_pos(self, camera_pos: tuple[int, int]) -> tuple[int, int]:
@@ -189,7 +192,7 @@ class World:
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)
         screen.blit(self.day_mask, (0, 0))
         print(f"Visible chunks: {len(drawable_chunks)}")
-        self._draw_chunk_debug(screen, camera_pos)
+        #self._draw_chunk_debug(screen, camera_pos)
 
 
 
