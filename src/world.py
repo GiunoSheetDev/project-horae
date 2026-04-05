@@ -47,6 +47,8 @@ class World:
         self.water_cooldown = 250
         self.water_frame = 0
 
+
+
         self._create_initial_world()
 
     def _load_assets(self) -> None:
@@ -105,7 +107,6 @@ class World:
 
 
     # -- Rendering -- #
-
     def _get_drawable_chunks(self, chunk_index: tuple[int, int]) -> list:
         out = []
         y, x = chunk_index
@@ -123,69 +124,76 @@ class World:
             if index not in self.chunks:
                 self._generate_chunk(index)
             out.append(self.chunks[index])
-
         return out
 
     def _get_chunk_from_camera_pos(self, camera_pos: tuple[int, int]) -> tuple[int, int]:
         cam_x, cam_y = camera_pos
-        TILE_W = 32 * SCALE
-        TILE_H = 16 * SCALE
-        
-        half_w = TILE_W // 2
-        half_h = TILE_H // 2
+        half_w = (32 * SCALE) // 2
+        half_h = (16 * SCALE) // 2
 
-        origin_x = half_w
-        origin_y = half_h
+        world_x = SCREENW // 2 + cam_x + half_w
+        world_y = SCREENH // 2 + cam_y + half_h
 
-        #get center chunk
-        screen_cx = SCREENW // 2
-        screen_cy = SCREENH // 2
-
-        world_x = screen_cx + cam_x + origin_x
-        world_y = screen_cy + cam_y + origin_y
-
-        tile_x = (world_x / half_w + world_y / half_h) / 2
-        tile_y = (world_y / half_h - world_x / half_w) / 2
-
-        tile_x -= CHUNK_SIZE / 2
-        tile_y -= CHUNK_SIZE / 2
-
-        tile_x = int(tile_x)
-        tile_y = int(tile_y)
+        tile_x = int((world_x / half_w + world_y / half_h) / 2 - CHUNK_SIZE / 2)
+        tile_y = int((world_y / half_h - world_x / half_w) / 2 - CHUNK_SIZE / 2)
 
         chunk_x = (tile_x // CHUNK_SIZE) * CHUNK_SIZE
         chunk_y = (tile_y // CHUNK_SIZE) * CHUNK_SIZE
+        return (chunk_y, chunk_x)
 
-        selected_chunk = (chunk_y, chunk_x)
-
-        return selected_chunk
+    def _sort_chunks(self, chunks: list[Chunk]) -> list[Chunk]:
+        return sorted(chunks, key=lambda c: c.index[0] + c.index[1])
 
     def _draw_background_layer(self, screen, camera_pos, drawable_chunks) -> None:
-        sorted_chunks = sorted(drawable_chunks, key=lambda c: c.index[0] + c.index[1])
-
-        for chunk in sorted_chunks:
+        for chunk in self._sort_chunks(drawable_chunks):
             chunk._draw_background_layer(screen, camera_pos, self.season, self.water_frame)
 
     def _draw_tree_layer(self, screen, camera_pos, drawable_chunks) -> None:
-        sorted_chunks = sorted(drawable_chunks, key=lambda c: c.index[0] + c.index[1])
-
-        for chunk in sorted_chunks:
+        for chunk in self._sort_chunks(drawable_chunks):
             chunk._draw_tree_layer(screen, camera_pos, self.season)
 
+    def _draw_chunk_debug(self, screen, camera_pos) -> None:
+        cam_x, cam_y = camera_pos
+        TILE_W = 32 * SCALE
+        TILE_H = 16 * SCALE
+        half_w = TILE_W // 2
+        half_h = TILE_H // 2
+        TREE_OVERHEAD = 96
+
+        for chunk in self.chunks.values():
+            y0, x0 = chunk.index
+
+            iso_x = (x0 - y0) * half_w - half_w
+            iso_y = (x0 + y0) * half_h
+
+            draw_x = iso_x - cam_x
+            draw_y = iso_y - cam_y
+
+            # Use raw unscaled steps (16, 8) matching _generate_chunk_image exactly
+            corners = []
+            for ty, tx in [(0, 0), (0, CHUNK_SIZE), (CHUNK_SIZE, CHUNK_SIZE), (CHUNK_SIZE, 0)]:
+                local_x = half_w + (32 * CHUNK_SIZE) // 2 + tx * 16 - ty * 16
+                local_y = tx * 8 + ty * 8 + TREE_OVERHEAD
+                corners.append((draw_x + local_x, draw_y + local_y))
+
+            pygame.draw.lines(screen, (255, 0, 0), True, corners, 1)
 
     def _draw(self, screen, camera_pos: tuple[int, int]) -> None:
         selected_chunk = self._get_chunk_from_camera_pos(camera_pos)
-        drawable_chunks_indices = self._get_drawable_chunks(selected_chunk)
-        drawable_chunks = self._get_chunks_from_indices(drawable_chunks_indices)
-
+        drawable_chunks = self._get_chunks_from_indices(self._get_drawable_chunks(selected_chunk))
+        
         self._draw_background_layer(screen, camera_pos, drawable_chunks)
-        #here in the middle draw the animals so the z layer is behind tree but on top of background
-
+        # animals drawn here: z-layer above background, below trees
+        
+        
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)
+        screen.blit(self.day_mask, (0, 0))
+        print(f"Visible chunks: {len(drawable_chunks)}")
+        self._draw_chunk_debug(screen, camera_pos)
 
-        screen.blit(self.day_mask, (0,0))
 
-    
+
+
     # -- Update -- #
 
     def _get_mask_color(self, percent: float) -> tuple[int,int,int,int]:
@@ -266,69 +274,61 @@ if __name__ == "__main__":
 
     
     screen = pygame.display.set_mode((SCREENW, SCREENH))
-    def run():
-        w = World()
-        clock = pygame.time.Clock()
+    
+    w = World()
+    clock = pygame.time.Clock()
 
-        camerax, cameray = 0, 0
+    camerax, cameray = 0, 0
 
-        is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
+    is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
 
-        is_running = True
+    is_running = True
 
-        while is_running:
-            #clock.tick(60)
-            
-            screen.fill((0, 0, 0))
-            w.update(screen, (camerax, cameray))
-            
-            if is_moving_left:
-                camerax -= 2
-            if is_moving_right:
-                camerax += 2
-            if is_moving_up:
-                cameray -= 2
-            if is_moving_down:
-                cameray += 2
+    while is_running:
+        #clock.tick(60)
+        
+        screen.fill((0, 0, 0))
+        w.update(screen, (camerax, cameray))
+        
+        if is_moving_left:
+            camerax -= 2
+        if is_moving_right:
+            camerax += 2
+        if is_moving_up:
+            cameray -= 2
+        if is_moving_down:
+            cameray += 2
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                is_running = False
+                
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
                     is_running = False
-                    
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        is_running = False
 
-                    if event.key == pygame.K_a:
-                        is_moving_left = True
-                    elif event.key == pygame.K_d:
-                        is_moving_right = True                
-                    if event.key == pygame.K_w:
-                        is_moving_up = True
-                    elif event.key == pygame.K_s:
-                        is_moving_down = True
+                if event.key == pygame.K_a:
+                    is_moving_left = True
+                elif event.key == pygame.K_d:
+                    is_moving_right = True                
+                if event.key == pygame.K_w:
+                    is_moving_up = True
+                elif event.key == pygame.K_s:
+                    is_moving_down = True
 
-                if event.type == pygame.KEYUP:
-                    if event.key == pygame.K_a:
-                        is_moving_left = False
-                    elif event.key == pygame.K_d:
-                        is_moving_right = False                
-                    if event.key == pygame.K_w:
-                        is_moving_up = False
-                    elif event.key == pygame.K_s:
-                        is_moving_down = False
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_a:
+                    is_moving_left = False
+                elif event.key == pygame.K_d:
+                    is_moving_right = False                
+                if event.key == pygame.K_w:
+                    is_moving_up = False
+                elif event.key == pygame.K_s:
+                    is_moving_down = False
 
-            pygame.display.update()
+        pygame.display.update()
 
-    profiler = cProfile.Profile()
-    profiler.enable()
 
-    run()
-
-    profiler.disable()
-    stats = pstats.Stats(profiler)
-
-    stats.sort_stats("cumtime").print_stats(20)
 
 
 
