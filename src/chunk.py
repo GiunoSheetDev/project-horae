@@ -4,14 +4,15 @@ import pygame
 
 from config import *
 from noise import pnoise2
-
+from collections import deque
 
 class Chunk:
-    def __init__(self, index: tuple[int, int], seed: int, background_assets : dict):
+    def __init__(self, index: tuple[int, int], seed: int, path_index: int, background_assets : dict):
         self.index = index
         self.chunk_size = CHUNK_SIZE
         self.biome = Biome.EMPTY
         self.seed = seed
+        self.path_index = path_index
         self.background_assets = background_assets
 
         # -- Numpy Arrays -- #
@@ -19,6 +20,8 @@ class Chunk:
         self.chunk_raw : npt.NDArray = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
         self.tree_probs : npt.NDArray = np.random.random((self.chunk_size, self.chunk_size))
         self.tree_types : npt.NDArray = np.random.randint(0, 10, (self.chunk_size, self.chunk_size))
+        
+        
 
         # -- Pygame Surfaces -- #
         self.image : dict = {"summer" : [], "autumn" : [], "winter" : []}
@@ -157,13 +160,16 @@ class Chunk:
                 else:                                    chunk[y, x] = Tile.WATER_MID.value
 
         self.chunk = chunk
-
+    
+    def _collapse_path(self, neighbor_chunks: dict[tuple[int, int], "Chunk"]) -> None:
+        
     def _generate_chunk(self) -> None:
         self.chunk = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
         self._generate_tree_probabilities()
         self._assign_biome()
         self._generate_tiles()
         self.chunk_raw = self.chunk.copy()
+
 
 
     # -- Surfaces Generation -- #
@@ -310,10 +316,16 @@ class Chunk:
         self.tree["autumn"] = tree_surface_autumn
         self.tree["winter"] = tree_surface_winter
 
+    def finalize_chunk_creation(self, neighbor_dict : dict) -> None:
+        '''
+        Collapses water and creates images
+        '''
+        self._collapse_water(neighbor_dict)
+        self._generate_chunk_image()
 
     # -- Rendering -- #
 
-    def _draw_background_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str, water_frame: int) -> None: 
+    def draw_background_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str, water_frame: int) -> None: 
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
         TILE_H = 16 * SCALE
@@ -334,7 +346,7 @@ class Chunk:
 
         screen.blit(surface, (draw_x, draw_y))
 
-    def _draw_tree_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str) -> None:
+    def draw_tree_layer(self, screen : pygame.Surface, camera_pos: tuple[int, int], season: str) -> None:
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
         TILE_H = 16 * SCALE
@@ -358,14 +370,6 @@ class Chunk:
         screen.blit(surface, (draw_x, draw_y))
 
 
-    def _draw(self, screen: pygame.Surface, camera_pos : tuple[int, int], season: str, frame : int) -> None:
-        self._draw_water_layer(screen, camera_pos, frame)
-        self._draw_background_layer(screen, camera_pos, season)
-        
-
-        #FIXME here should be drawn the animals for z indexing
-
-        self._draw_tree_layer(screen, camera_pos, season)
 
 
 

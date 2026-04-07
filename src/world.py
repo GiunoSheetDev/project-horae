@@ -13,8 +13,6 @@ NAMING CONVENTION
 
 create_*   → allocates/initialises empty structures
 generate_* → fills with actual content (noise, images)
-add_*      → public API for adding new chunks at runtime
-
 
 
 '''
@@ -32,7 +30,11 @@ class World:
 
         self.chunks : dict[tuple[int, int], Chunk] = {}
 
-        self.clock = pygame.time.Clock().tick(60)
+        #used for animal pathing
+        self.paths : dict[tuple[int, int], npt.NDArray] = {}
+        self.path_index = 0 
+
+        self.clock = pygame.time.Clock().tick(FPS)
 
         self.season = "summer"
         self.season_update_time = pygame.time.get_ticks()
@@ -72,7 +74,8 @@ class World:
 
             
             if nidx not in self.chunks:
-                chunk = Chunk(nidx, self.seed, self.background_assets)
+                chunk = Chunk(nidx, self.seed, self.path_index,  self.background_assets)
+                self.path_index += 1
                 self.chunks[nidx] = chunk
 
                 # Only generate raw here — DO NOT collapse yet
@@ -82,21 +85,18 @@ class World:
         return neighbors
 
     def _generate_chunk(self, chunk_index: tuple[int, int]) -> None:
-        chunk = Chunk(chunk_index, self.seed, self.background_assets)
+        chunk = Chunk(chunk_index, self.seed, self.path_index, self.background_assets)
+        self.path_index +=1
         self.chunks[chunk_index] = chunk
 
         # water collapse needs neighbors, so redo it now that chunk is registered
         chunk.chunk = chunk.chunk_raw.copy()
-        chunk._collapse_water(self._build_neighbor_dict(chunk_index))
-        chunk._generate_chunk_image()
+        chunk.finalize_chunk_creation(self._build_neighbor_dict(chunk_index))
 
-        
     def _create_initial_world(self) -> None:
         for y in range(0, self.gridh, self.chunk_size):
             for x in range(0, self.gridw, self.chunk_size):
                 self._generate_chunk((y, x))
-
-        
 
 
     # -- Rendering -- #
@@ -122,8 +122,7 @@ class World:
 
             if not chunk.image["summer"]:  
                 chunk.chunk = chunk.chunk_raw.copy()
-                chunk._collapse_water(self._build_neighbor_dict(index))
-                chunk._generate_chunk_image()
+                chunk.finalize_chunk_creation(self._build_neighbor_dict(index))
 
             out.append(chunk)
 
@@ -149,11 +148,11 @@ class World:
 
     def _draw_background_layer(self, screen, camera_pos, drawable_chunks) -> None:
         for chunk in self._sort_chunks(drawable_chunks):
-            chunk._draw_background_layer(screen, camera_pos, self.season, self.water_frame)
+            chunk.draw_background_layer(screen, camera_pos, self.season, self.water_frame)
 
     def _draw_tree_layer(self, screen, camera_pos, drawable_chunks) -> None:
         for chunk in self._sort_chunks(drawable_chunks):
-            chunk._draw_tree_layer(screen, camera_pos, self.season)
+            chunk.draw_tree_layer(screen, camera_pos, self.season)
 
     def _draw_chunk_debug(self, screen, camera_pos) -> None:
         cam_x, cam_y = camera_pos
@@ -191,10 +190,8 @@ class World:
         
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)
         screen.blit(self.day_mask, (0, 0))
-        print(f"Visible chunks: {len(drawable_chunks)}")
+        #print(f"Visible chunks: {len(drawable_chunks)}")
         #self._draw_chunk_debug(screen, camera_pos)
-
-
 
 
     # -- Update -- #
@@ -246,21 +243,6 @@ class World:
 
     # -- Public Methods -- #
 
-    def add_chunk(self, pos: tuple[int, int], direction: str) -> None:
-        y, x = pos
-        index_x = (x // self.chunk_size) * self.chunk_size
-        index_y = (y // self.chunk_size) * self.chunk_size
-
-        match direction.lower():
-            case "north": index_y -= self.chunk_size
-            case "south": index_y += self.chunk_size
-            case "east" : index_x += self.chunk_size
-            case "west" : index_x -= self.chunk_size
-
-        chunk_index = (index_y, index_x)
-        if chunk_index not in self.chunks:
-            self._generate_chunk(chunk_index)
-
     def update(self, screen, camera_pos):
         self._update_day()
         self._update_season()
@@ -293,6 +275,8 @@ if __name__ == "__main__":
         screen.fill((0, 0, 0))
         w.update(screen, (camerax, cameray))
         
+        #print(len(w.chunks.keys()), w.path_index)
+
         if is_moving_left:
             camerax -= 2
         if is_moving_right:
