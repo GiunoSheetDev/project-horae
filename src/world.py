@@ -7,6 +7,7 @@ import random
 
 from config import *
 from chunk import Chunk
+from animal import AnimalManager
 
 '''
 NAMING CONVENTION
@@ -49,7 +50,7 @@ class World:
         self.water_cooldown = 250
         self.water_frame = 0
 
-
+        self.animal_manager = AnimalManager(self.chunks)
 
         self._create_initial_world()
 
@@ -154,6 +155,10 @@ class World:
         for chunk in self._sort_chunks(drawable_chunks):
             chunk.draw_tree_layer(screen, camera_pos, self.season)
 
+    def _draw_animals(self, screen, camera_pos, drawable_chunks) -> None:
+        for chunk in self._sort_chunks(drawable_chunks):
+            chunk.draw_animals(screen, camera_pos)
+
     def _draw_chunk_debug(self, screen, camera_pos) -> None:
         cam_x, cam_y = camera_pos
         TILE_W = 32 * SCALE
@@ -187,6 +192,7 @@ class World:
         self._draw_background_layer(screen, camera_pos, drawable_chunks)
         # animals drawn here: z-layer above background, below trees
         
+        self._draw_animals(screen, camera_pos, drawable_chunks)
         
         self._draw_tree_layer(screen, camera_pos, drawable_chunks)
         screen.blit(self.day_mask, (0, 0))
@@ -244,6 +250,7 @@ class World:
     # -- Public Methods -- #
 
     def update(self, screen, camera_pos):
+        self.animal_manager._update_chunks()
         self._update_day()
         self._update_season()
         self._update_water_animation()
@@ -258,62 +265,6 @@ if __name__ == "__main__":
     import pstats
 
     
-    screen = pygame.display.set_mode((SCREENW, SCREENH))
-    
-    w = World()
-    clock = pygame.time.Clock()
-
-    camerax, cameray = 0, 0
-
-    is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
-
-    is_running = True
-
-    while is_running:
-        #clock.tick(60)
-        
-        screen.fill((0, 0, 0))
-        w.update(screen, (camerax, cameray))
-        
-        #print(len(w.chunks.keys()), w.path_index)
-
-        if is_moving_left:
-            camerax -= 2
-        if is_moving_right:
-            camerax += 2
-        if is_moving_up:
-            cameray -= 2
-        if is_moving_down:
-            cameray += 2
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                is_running = False
-                
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    is_running = False
-
-                if event.key == pygame.K_a:
-                    is_moving_left = True
-                elif event.key == pygame.K_d:
-                    is_moving_right = True                
-                if event.key == pygame.K_w:
-                    is_moving_up = True
-                elif event.key == pygame.K_s:
-                    is_moving_down = True
-
-            if event.type == pygame.KEYUP:
-                if event.key == pygame.K_a:
-                    is_moving_left = False
-                elif event.key == pygame.K_d:
-                    is_moving_right = False                
-                if event.key == pygame.K_w:
-                    is_moving_up = False
-                elif event.key == pygame.K_s:
-                    is_moving_down = False
-
-        pygame.display.update()
 
 
 

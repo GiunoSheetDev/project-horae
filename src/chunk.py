@@ -7,13 +7,14 @@ from noise import pnoise2
 from collections import deque
 
 class Chunk:
-    def __init__(self, index: tuple[int, int], seed: int, path_index: int, background_assets : dict):
+    def __init__(self, index: tuple[int, int], seed: int, background_assets : dict):
         self.index = index
         self.chunk_size = CHUNK_SIZE
         self.biome = Biome.EMPTY
         self.seed = seed
-        self.path_index = path_index
         self.background_assets = background_assets
+
+
 
         # -- Numpy Arrays -- #
         self.chunk : npt.NDArray = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
@@ -30,6 +31,8 @@ class Chunk:
         self.biome_offset = (self.seed * 0.001, self.seed * 0.002)
         self.tile_offset = (self.seed * 0.003, self.seed * 0.007)
 
+
+        self.animals = set()
 
         self._generate_chunk()
 
@@ -160,8 +163,6 @@ class Chunk:
                 else:                                    chunk[y, x] = Tile.WATER_MID.value
 
         self.chunk = chunk
-    
-    def _collapse_path(self, neighbor_chunks: dict[tuple[int, int], "Chunk"]) -> None:
         
     def _generate_chunk(self) -> None:
         self.chunk = np.full((self.chunk_size, self.chunk_size), Tile.EMPTY.value)
@@ -369,7 +370,9 @@ class Chunk:
 
         screen.blit(surface, (draw_x, draw_y))
 
-
+    def draw_animals(self, screen : pygame.Surface, camera_pos: tuple[int, int]) -> None:
+        for animal in self.animals:
+            animal.draw(screen, camera_pos)
 
 
 
