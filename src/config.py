@@ -1,7 +1,7 @@
 SCREENW, SCREENH = 1280, 720
 SCALE = 1
 
-GRIDW, GRIDH = 0, 0
+GRIDW, GRIDH = 20, 20
 CHUNK_SIZE = 20
 
 
@@ -19,7 +19,7 @@ DRAWABLE_CHUNKS = [(-2, -2), (-2, -1), (-2, 0), (-2, 1), (-2, 2), (-2, 3), (-1, 
                     (2, -1), (2, 0), (2, 1), (2, 2), (2, 3), (3, -2), (3, -1), (3, 0), (3, 1), (3, 2), (3, 3),  (0, -3), (1, -3)
                     ]
 
-
+FPS = 60
 
 import os
 ASSET_PATH = os.path.join(

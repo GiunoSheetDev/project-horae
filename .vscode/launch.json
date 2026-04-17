@@ -5,7 +5,7 @@
             "name": "Run world.py",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/src/world.py",
+            "program": "${workspaceFolder}/src/main.py",
             "console": "integratedTerminal"
         }
     ]

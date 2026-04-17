@@ -1,0 +1,84 @@
+import pygame
+import cProfile
+import pstats
+
+from world import World
+from config import *
+from animal import Animal, Stag, Badger, Wolf, Boar
+
+
+
+if __name__ == "__main__":
+    screen = pygame.display.set_mode((SCREENW, SCREENH))
+    
+    w = World(seed=69)
+    clock = pygame.time.Clock()
+    a = Stag(w.chunks)
+    b = Wolf(w.chunks)
+    a.position_chunk = (20, 0)
+    a.position_local_coordinates = (8, 4)
+    a.movement_target_chunk = (20, -20)
+    a.movement_target_local_coordinates = (10, 12)
+
+    b.position_chunk = (20, 0)
+    b.position_local_coordinates = (8, 4)
+    b.movement_target_chunk = (20, -20)
+    b.movement_target_local_coordinates = (10, 12)
+
+
+
+    w.animal_manager.animals.add(a)
+    w.animal_manager.animals.add(b)
+
+    camerax, cameray = 0, 0
+
+    is_moving_left = is_moving_right = is_moving_up = is_moving_down = False
+
+    is_running = True
+
+    while is_running:
+        clock.tick(60)
+        
+        screen.fill((0, 0, 0))
+        w.update(screen, (camerax, cameray))
+        a.update()
+        
+        
+
+        if is_moving_left:
+            camerax -= 2
+        if is_moving_right:
+            camerax += 2
+        if is_moving_up:
+            cameray -= 2
+        if is_moving_down:
+            cameray += 2
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                is_running = False
+                
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    is_running = False
+
+                if event.key == pygame.K_a:
+                    is_moving_left = True
+                elif event.key == pygame.K_d:
+                    is_moving_right = True                
+                if event.key == pygame.K_w:
+                    is_moving_up = True
+                elif event.key == pygame.K_s:
+                    is_moving_down = True
+
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_a:
+                    is_moving_left = False
+                elif event.key == pygame.K_d:
+                    is_moving_right = False                
+                if event.key == pygame.K_w:
+                    is_moving_up = False
+                elif event.key == pygame.K_s:
+                    is_moving_down = False
+
+        pygame.display.update()
